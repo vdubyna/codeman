@@ -48,6 +48,7 @@ def test_scan_collects_supported_files_and_skips_binary_ignored_and_unsupported(
 
     assert [record.relative_path for record in result.source_files] == [
         "assets/app.js",
+        "assets/broken.js",
         "public/index.html",
         "src/Controller/HomeController.php",
         "templates/page.html.twig",

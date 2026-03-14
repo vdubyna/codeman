@@ -13,6 +13,7 @@ from codeman.application.indexing.build_chunks import (
     build_chunk_id,
 )
 from codeman.application.ports.snapshot_port import ResolvedRevision
+from codeman.config.indexing import IndexingConfig
 from codeman.contracts.chunking import BuildChunksRequest, ChunkPayloadDocument, ChunkRecord
 from codeman.contracts.repository import RepositoryRecord, SnapshotRecord, SourceFileRecord
 from codeman.infrastructure.chunkers.chunker_registry import ChunkerRegistry
@@ -34,6 +35,7 @@ class FakeRepositoryStore:
 class FakeSnapshotStore:
     snapshot: SnapshotRecord | None
     initialized: int = 0
+    marked_chunks: list[tuple[str, datetime, str]] | None = None
 
     def initialize(self) -> None:
         self.initialized += 1
@@ -42,6 +44,19 @@ class FakeSnapshotStore:
         if self.snapshot is None or self.snapshot.snapshot_id != snapshot_id:
             return None
         return self.snapshot
+
+    def mark_chunks_generated(
+        self,
+        *,
+        snapshot_id: str,
+        generated_at: datetime,
+        indexing_config_fingerprint: str,
+    ) -> None:
+        if self.marked_chunks is None:
+            self.marked_chunks = []
+        self.marked_chunks.append(
+            (snapshot_id, generated_at, indexing_config_fingerprint),
+        )
 
 
 @dataclass
@@ -99,6 +114,11 @@ class FakeArtifactStore:
         destination.write_text(payload.model_dump_json(indent=2), encoding="utf-8")
         self.payloads.append(destination)
         return destination
+
+    def read_chunk_payload(self, payload_path: Path) -> ChunkPayloadDocument:
+        return ChunkPayloadDocument.model_validate_json(
+            payload_path.read_text(encoding="utf-8"),
+        )
 
 
 def build_repository_record(repository_path: Path) -> RepositoryRecord:
@@ -235,6 +255,7 @@ def test_build_chunks_falls_back_per_file_and_writes_payload_artifacts(
         parser_registry=ParserRegistry(),
         chunker_registry=ChunkerRegistry(),
         artifact_store=artifact_store,
+        indexing_config=IndexingConfig(),
     )
 
     result = use_case.execute(BuildChunksRequest(snapshot_id=snapshot.snapshot_id))
@@ -285,6 +306,7 @@ def test_build_chunks_requires_extracted_source_inventory(tmp_path: Path) -> Non
             artifacts_root=workspace / ".codeman" / "artifacts",
             payloads=[],
         ),
+        indexing_config=IndexingConfig(),
     )
 
     with pytest.raises(SourceInventoryMissingError):
@@ -324,6 +346,7 @@ def test_build_chunks_returns_zero_chunks_for_extracted_snapshot_with_no_support
             artifacts_root=workspace / ".codeman" / "artifacts",
             payloads=[],
         ),
+        indexing_config=IndexingConfig(),
     )
 
     result = use_case.execute(BuildChunksRequest(snapshot_id=snapshot.snapshot_id))
@@ -401,6 +424,7 @@ def test_build_chunks_falls_back_when_preferred_path_raises_unexpected_exception
             artifacts_root=workspace / ".codeman" / "artifacts",
             payloads=[],
         ),
+        indexing_config=IndexingConfig(),
     )
 
     result = use_case.execute(BuildChunksRequest(snapshot_id=snapshot.snapshot_id))

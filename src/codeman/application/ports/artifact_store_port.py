@@ -17,3 +17,6 @@ class ArtifactStorePort(Protocol):
 
     def write_chunk_payload(self, payload: ChunkPayloadDocument, *, snapshot_id: str) -> Path:
         """Persist a normalized chunk payload artifact and return its path."""
+
+    def read_chunk_payload(self, payload_path: Path) -> ChunkPayloadDocument:
+        """Load a previously persisted chunk payload artifact."""

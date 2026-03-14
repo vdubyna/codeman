@@ -6,11 +6,13 @@ import typer
 
 from codeman.application.indexing.build_chunks import BuildChunksError
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesError
+from codeman.application.repo.reindex_repository import ReindexRepositoryError
 from codeman.bootstrap import BootstrapContainer
 from codeman.cli.common import OutputFormat, build_command_meta, emit_json_response
 from codeman.contracts.chunking import BuildChunksRequest
 from codeman.contracts.common import SuccessEnvelope
 from codeman.contracts.errors import ErrorDetail, FailureEnvelope
+from codeman.contracts.reindexing import ReindexRepositoryRequest
 from codeman.contracts.repository import ExtractSourceFilesRequest
 
 app = typer.Typer(help="Index build and refresh commands.", no_args_is_help=True)
@@ -48,6 +50,26 @@ def _handle_build_chunks_error(
     command_name: str,
 ) -> None:
     """Render chunk-generation failures in the requested output format."""
+
+    envelope = FailureEnvelope(
+        error=ErrorDetail(code=error.error_code, message=error.message),
+        meta=build_command_meta(command_name, output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+    else:
+        typer.secho(error.message, err=True, fg=typer.colors.RED)
+
+    raise typer.Exit(code=error.exit_code)
+
+
+def _handle_reindex_error(
+    *,
+    error: ReindexRepositoryError,
+    output_format: OutputFormat,
+    command_name: str,
+) -> None:
+    """Render re-index failures in the requested output format."""
 
     envelope = FailureEnvelope(
         error=ErrorDetail(code=error.error_code, message=error.message),
@@ -168,3 +190,54 @@ def build_chunks(
     if fallback_paths:
         lines.append(f"Fallback paths: {', '.join(fallback_paths)}")
     typer.echo("\n".join(lines))
+
+
+@app.command("reindex")
+def reindex_repository(
+    ctx: typer.Context,
+    repository_id: str,
+    output_format: OutputFormat = typer.Option(OutputFormat.TEXT, "--output-format"),
+) -> None:
+    """Re-index a registered repository using the latest usable baseline."""
+
+    from codeman.cli.app import get_container
+
+    typer.echo(f"Re-indexing repository: {repository_id}", err=True)
+    container: BootstrapContainer = get_container(ctx)
+    try:
+        result = container.reindex_repository.execute(
+            ReindexRepositoryRequest(repository_id=repository_id),
+        )
+    except ReindexRepositoryError as error:
+        _handle_reindex_error(
+            error=error,
+            output_format=output_format,
+            command_name="index.reindex",
+        )
+
+    envelope = SuccessEnvelope(
+        data=result,
+        meta=build_command_meta("index.reindex", output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+        return
+
+    typer.echo(
+        "\n".join(
+            [
+                f"Re-indexed repository: {result.repository.repository_name}",
+                f"Run ID: {result.run_id}",
+                f"Repository ID: {result.repository.repository_id}",
+                f"Previous snapshot: {result.previous_snapshot_id}",
+                f"Result snapshot: {result.result_snapshot_id}",
+                f"Change reason: {result.change_reason}",
+                f"No-op: {'yes' if result.noop else 'no'}",
+                f"Source files reused: {result.source_files_reused}",
+                f"Source files rebuilt: {result.source_files_rebuilt}",
+                f"Source files removed: {result.source_files_removed}",
+                f"Chunks reused: {result.chunks_reused}",
+                f"Chunks rebuilt: {result.chunks_rebuilt}",
+            ]
+        )
+    )

@@ -9,6 +9,7 @@ from codeman.application.indexing.build_chunks import BuildChunksUseCase
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesUseCase
 from codeman.application.repo.create_snapshot import CreateSnapshotUseCase
 from codeman.application.repo.register_repository import RegisterRepositoryUseCase
+from codeman.application.repo.reindex_repository import ReindexRepositoryUseCase
 from codeman.config.models import AppConfig
 from codeman.infrastructure.artifacts.filesystem_artifact_store import (
     FilesystemArtifactStore,
@@ -18,6 +19,9 @@ from codeman.infrastructure.parsers.parser_registry import ParserRegistry
 from codeman.infrastructure.persistence.sqlite.engine import create_sqlite_engine
 from codeman.infrastructure.persistence.sqlite.repositories.chunk_repository import (
     SqliteChunkStore,
+)
+from codeman.infrastructure.persistence.sqlite.repositories.reindex_run_repository import (
+    SqliteReindexRunStore,
 )
 from codeman.infrastructure.persistence.sqlite.repositories.repository_repository import (
     SqliteRepositoryMetadataStore,
@@ -49,6 +53,7 @@ class BootstrapContainer:
     create_snapshot: CreateSnapshotUseCase
     extract_source_files: ExtractSourceFilesUseCase
     build_chunks: BuildChunksUseCase
+    reindex_repository: ReindexRepositoryUseCase
 
 
 def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
@@ -81,8 +86,13 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         engine=snapshot_engine,
         database_path=runtime_paths.metadata_database_path,
     )
+    reindex_run_store = SqliteReindexRunStore(
+        engine=snapshot_engine,
+        database_path=runtime_paths.metadata_database_path,
+    )
     revision_resolver = GitRevisionResolver()
     artifact_store = FilesystemArtifactStore(runtime_paths.artifacts)
+    source_scanner = LocalRepositoryScanner()
     register_repository = RegisterRepositoryUseCase(
         runtime_paths=runtime_paths,
         metadata_store=metadata_store,
@@ -100,7 +110,7 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         snapshot_store=snapshot_store,
         source_inventory_store=source_inventory_store,
         revision_resolver=revision_resolver,
-        source_scanner=LocalRepositoryScanner(),
+        source_scanner=source_scanner,
     )
     build_chunks = BuildChunksUseCase(
         runtime_paths=runtime_paths,
@@ -112,6 +122,23 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         parser_registry=ParserRegistry(),
         chunker_registry=ChunkerRegistry(),
         artifact_store=artifact_store,
+        indexing_config=config.indexing,
+    )
+    reindex_repository = ReindexRepositoryUseCase(
+        runtime_paths=runtime_paths,
+        repository_store=metadata_store,
+        snapshot_store=snapshot_store,
+        source_inventory_store=source_inventory_store,
+        source_scanner=source_scanner,
+        chunk_store=chunk_store,
+        reindex_run_store=reindex_run_store,
+        revision_resolver=revision_resolver,
+        create_snapshot=create_snapshot,
+        extract_source_files=extract_source_files,
+        parser_registry=ParserRegistry(),
+        chunker_registry=ChunkerRegistry(),
+        artifact_store=artifact_store,
+        indexing_config=config.indexing,
     )
     return BootstrapContainer(
         config=config,
@@ -124,4 +151,5 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         create_snapshot=create_snapshot,
         extract_source_files=extract_source_files,
         build_chunks=build_chunks,
+        reindex_repository=reindex_repository,
     )

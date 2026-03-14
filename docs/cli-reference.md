@@ -23,3 +23,8 @@ uv run codeman index extract-sources <snapshot-id> --output-format json
 uv run codeman index build-chunks <snapshot-id>
 uv run codeman index build-chunks <snapshot-id> --output-format json
 ```
+
+```bash
+uv run codeman index reindex <repository-id>
+uv run codeman index reindex <repository-id> --output-format json
+```

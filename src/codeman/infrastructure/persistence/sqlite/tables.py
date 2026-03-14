@@ -36,6 +36,8 @@ snapshots_table = Table(
     Column("manifest_path", String(length=2048), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("source_inventory_extracted_at", DateTime(timezone=True), nullable=True),
+    Column("chunk_generation_completed_at", DateTime(timezone=True), nullable=True),
+    Column("indexing_config_fingerprint", String(length=64), nullable=True),
 )
 
 source_files_table = Table(
@@ -73,5 +75,35 @@ chunks_table = Table(
     Column("start_byte", Integer(), nullable=False),
     Column("end_byte", Integer(), nullable=False),
     Column("payload_path", String(length=2048), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+reindex_runs_table = Table(
+    "reindex_runs",
+    metadata,
+    Column("id", String(length=32), primary_key=True),
+    Column("repository_id", String(length=32), ForeignKey("repositories.id"), nullable=False),
+    Column(
+        "previous_snapshot_id",
+        String(length=32),
+        ForeignKey("snapshots.id"),
+        nullable=False,
+    ),
+    Column(
+        "result_snapshot_id",
+        String(length=32),
+        ForeignKey("snapshots.id"),
+        nullable=False,
+    ),
+    Column("previous_revision_identity", String(length=255), nullable=False),
+    Column("result_revision_identity", String(length=255), nullable=False),
+    Column("previous_config_fingerprint", String(length=64), nullable=False),
+    Column("current_config_fingerprint", String(length=64), nullable=False),
+    Column("change_reason", String(length=64), nullable=False),
+    Column("source_files_reused", Integer(), nullable=False),
+    Column("source_files_rebuilt", Integer(), nullable=False),
+    Column("source_files_removed", Integer(), nullable=False),
+    Column("chunks_reused", Integer(), nullable=False),
+    Column("chunks_rebuilt", Integer(), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
 )

@@ -43,4 +43,6 @@ class ErrorCode:
     SOURCE_EXTRACTION_FAILED = "source_extraction_failed"
     SOURCE_INVENTORY_MISSING = "source_inventory_missing"
     CHUNK_GENERATION_FAILED = "chunk_generation_failed"
+    INDEXED_BASELINE_MISSING = "indexed_baseline_missing"
+    REINDEX_FAILED = "reindex_failed"
     INTERNAL_ERROR = "internal_error"

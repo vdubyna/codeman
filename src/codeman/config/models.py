@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from codeman.config.indexing import IndexingConfig
+
 
 class RuntimeConfig(BaseModel):
     """Runtime path configuration."""
@@ -36,3 +38,4 @@ class AppConfig(BaseModel):
     project_name: str = "codeman"
     default_output_format: str = "text"
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    indexing: IndexingConfig = Field(default_factory=IndexingConfig)

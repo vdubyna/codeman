@@ -7,13 +7,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import exists, insert, select, update
 from sqlalchemy.engine import Engine
 
 from codeman.application.ports.snapshot_port import SnapshotMetadataStorePort
 from codeman.contracts.repository import SnapshotRecord
 from codeman.infrastructure.persistence.sqlite.migrations import upgrade_database
-from codeman.infrastructure.persistence.sqlite.tables import snapshots_table
+from codeman.infrastructure.persistence.sqlite.tables import (
+    chunks_table,
+    snapshots_table,
+)
 
 
 @dataclass(slots=True)
@@ -43,6 +46,36 @@ class SqliteSnapshotMetadataStore(SnapshotMetadataStorePort):
 
         return self._row_to_record(row)
 
+    def get_latest_indexed_snapshot(self, repository_id: str) -> SnapshotRecord | None:
+        """Return the latest snapshot with extracted sources and completed chunking."""
+
+        if not self.database_path.exists():
+            return None
+
+        chunk_rows_exist = exists(
+            select(chunks_table.c.id).where(chunks_table.c.snapshot_id == snapshots_table.c.id),
+        )
+        query = (
+            select(snapshots_table)
+            .where(
+                snapshots_table.c.repository_id == repository_id,
+                snapshots_table.c.source_inventory_extracted_at.is_not(None),
+                (
+                    snapshots_table.c.chunk_generation_completed_at.is_not(None)
+                    | chunk_rows_exist
+                ),
+            )
+            .order_by(snapshots_table.c.created_at.desc())
+            .limit(1)
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(query).mappings().first()
+
+        if row is None:
+            return None
+
+        return self._row_to_record(row)
+
     def create_snapshot(
         self,
         *,
@@ -63,6 +96,8 @@ class SqliteSnapshotMetadataStore(SnapshotMetadataStorePort):
             manifest_path=str(manifest_path),
             created_at=created_at,
             source_inventory_extracted_at=None,
+            chunk_generation_completed_at=None,
+            indexing_config_fingerprint=None,
         )
         with self.engine.begin() as connection:
             connection.execute(statement)
@@ -75,6 +110,8 @@ class SqliteSnapshotMetadataStore(SnapshotMetadataStorePort):
             manifest_path=manifest_path,
             created_at=created_at,
             source_inventory_extracted_at=None,
+            chunk_generation_completed_at=None,
+            indexing_config_fingerprint=None,
         )
 
     def mark_source_inventory_extracted(
@@ -93,6 +130,26 @@ class SqliteSnapshotMetadataStore(SnapshotMetadataStorePort):
         with self.engine.begin() as connection:
             connection.execute(statement)
 
+    def mark_chunks_generated(
+        self,
+        *,
+        snapshot_id: str,
+        generated_at: datetime,
+        indexing_config_fingerprint: str,
+    ) -> None:
+        """Record that chunk generation completed for a snapshot."""
+
+        statement = (
+            update(snapshots_table)
+            .where(snapshots_table.c.id == snapshot_id)
+            .values(
+                chunk_generation_completed_at=generated_at,
+                indexing_config_fingerprint=indexing_config_fingerprint,
+            )
+        )
+        with self.engine.begin() as connection:
+            connection.execute(statement)
+
     @staticmethod
     def _row_to_record(row: Any) -> SnapshotRecord:
         """Convert a row mapping into a snapshot contract DTO."""
@@ -105,4 +162,6 @@ class SqliteSnapshotMetadataStore(SnapshotMetadataStorePort):
             manifest_path=Path(row["manifest_path"]),
             created_at=row["created_at"],
             source_inventory_extracted_at=row["source_inventory_extracted_at"],
+            chunk_generation_completed_at=row["chunk_generation_completed_at"],
+            indexing_config_fingerprint=row["indexing_config_fingerprint"],
         )

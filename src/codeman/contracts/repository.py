@@ -62,6 +62,8 @@ class SnapshotRecord(BaseModel):
     manifest_path: Path
     created_at: datetime
     source_inventory_extracted_at: datetime | None = None
+    chunk_generation_completed_at: datetime | None = None
+    indexing_config_fingerprint: str | None = None
 
 
 class SnapshotManifestDocument(BaseModel):

@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from codeman.application.indexing.build_chunks import SourceInventoryMissingError
 from codeman.application.indexing.extract_source_files import SnapshotSourceMismatchError
+from codeman.application.repo.reindex_repository import IndexedBaselineMissingError
 from codeman.bootstrap import bootstrap
 from codeman.cli.app import app
 from codeman.contracts.chunking import (
@@ -16,6 +17,7 @@ from codeman.contracts.chunking import (
     ChunkGenerationDiagnostics,
     ChunkRecord,
 )
+from codeman.contracts.reindexing import ReindexDiagnostics, ReindexRepositoryResult
 from codeman.contracts.repository import (
     ExtractSourceFilesResult,
     RepositoryRecord,
@@ -160,6 +162,44 @@ def build_chunk_result(repository_path: Path) -> BuildChunksResult:
     )
 
 
+def build_reindex_result(repository_path: Path) -> ReindexRepositoryResult:
+    now = datetime.now(UTC)
+    repository = RepositoryRecord(
+        repository_id="repo-123",
+        repository_name=repository_path.name,
+        canonical_path=repository_path,
+        requested_path=repository_path,
+        created_at=now,
+        updated_at=now,
+    )
+    return ReindexRepositoryResult(
+        run_id="run-123",
+        repository=repository,
+        previous_snapshot_id="snapshot-123",
+        result_snapshot_id="snapshot-456",
+        change_reason="source_changed",
+        previous_revision_identity="revision-old",
+        result_revision_identity="revision-new",
+        previous_config_fingerprint="fingerprint-old",
+        current_config_fingerprint="fingerprint-old",
+        source_files_reused=4,
+        source_files_rebuilt=1,
+        source_files_removed=0,
+        chunks_reused=7,
+        chunks_rebuilt=1,
+        noop=False,
+        diagnostics=ReindexDiagnostics(
+            source_files_scanned=5,
+            source_files_unchanged=4,
+            source_files_changed=1,
+            source_files_reused=4,
+            source_files_rebuilt=1,
+            chunks_reused=7,
+            chunks_rebuilt=1,
+        ),
+    )
+
+
 def test_index_extract_sources_command_renders_text_summary(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -266,3 +306,58 @@ def test_index_build_chunks_command_returns_json_failure_for_missing_inventory(
     assert payload["ok"] is False
     assert payload["error"]["code"] == "source_inventory_missing"
     assert payload["meta"]["command"] == "index.build-chunks"
+
+
+def test_index_reindex_command_renders_text_summary(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target_repo = tmp_path / "registered-repo"
+    target_repo.mkdir()
+    container = bootstrap(workspace_root=workspace)
+
+    class StubReindexRepositoryUseCase:
+        def execute(self, _request: object) -> ReindexRepositoryResult:
+            return build_reindex_result(target_repo.resolve())
+
+    container.reindex_repository = StubReindexRepositoryUseCase()
+
+    result = runner.invoke(
+        app,
+        ["index", "reindex", "repo-123"],
+        obj=container,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Re-indexed repository: registered-repo" in result.stdout
+    assert "Change reason: source_changed" in result.stdout
+    assert "Chunks rebuilt: 1" in result.stdout
+
+
+def test_index_reindex_command_returns_json_failure_for_missing_baseline(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    container = bootstrap(workspace_root=workspace)
+
+    class StubReindexRepositoryUseCase:
+        def execute(self, _request: object) -> object:
+            raise IndexedBaselineMissingError(
+                "No indexed baseline exists yet for this repository; complete the initial "
+                "`repo snapshot -> index extract-sources -> index build-chunks` flow first.",
+            )
+
+    container.reindex_repository = StubReindexRepositoryUseCase()
+
+    result = runner.invoke(
+        app,
+        ["index", "reindex", "repo-123", "--output-format", "json"],
+        obj=container,
+    )
+
+    payload = json.loads(result.stdout.splitlines()[-1])
+
+    assert result.exit_code == 32
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "indexed_baseline_missing"
+    assert payload["meta"]["command"] == "index.reindex"

@@ -34,6 +34,9 @@ class SnapshotMetadataStorePort(Protocol):
     def get_by_snapshot_id(self, snapshot_id: str) -> SnapshotRecord | None:
         """Return a snapshot record if the identifier exists."""
 
+    def get_latest_indexed_snapshot(self, repository_id: str) -> SnapshotRecord | None:
+        """Return the latest snapshot with extracted sources and completed chunking."""
+
     def create_snapshot(
         self,
         *,
@@ -53,3 +56,12 @@ class SnapshotMetadataStorePort(Protocol):
         extracted_at: datetime,
     ) -> None:
         """Record that source inventory extraction completed for a snapshot."""
+
+    def mark_chunks_generated(
+        self,
+        *,
+        snapshot_id: str,
+        generated_at: datetime,
+        indexing_config_fingerprint: str,
+    ) -> None:
+        """Record that chunk generation completed for a snapshot."""

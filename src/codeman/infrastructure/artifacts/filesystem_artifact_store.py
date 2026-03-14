@@ -37,3 +37,10 @@ class FilesystemArtifactStore(ArtifactStorePort):
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(payload.model_dump_json(indent=2), encoding="utf-8")
         return destination
+
+    def read_chunk_payload(self, payload_path: Path) -> ChunkPayloadDocument:
+        """Load a normalized JSON payload artifact for a retrieval chunk."""
+
+        return ChunkPayloadDocument.model_validate_json(
+            payload_path.read_text(encoding="utf-8"),
+        )

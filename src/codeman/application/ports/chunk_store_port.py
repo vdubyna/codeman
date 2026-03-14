@@ -15,3 +15,6 @@ class ChunkStorePort(Protocol):
 
     def upsert_chunks(self, chunks: Sequence[ChunkRecord]) -> list[ChunkRecord]:
         """Persist chunk metadata rows without duplicating deterministic chunks."""
+
+    def list_by_snapshot(self, snapshot_id: str) -> list[ChunkRecord]:
+        """Return chunk rows for a snapshot ordered by path and span."""

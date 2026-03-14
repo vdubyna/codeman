@@ -92,6 +92,26 @@ class SqliteChunkStore(ChunkStorePort):
 
         return [self._row_to_record(row) for row in rows]
 
+    def list_by_snapshot(self, snapshot_id: str) -> list[ChunkRecord]:
+        """Return chunk rows for a snapshot ordered by path and span."""
+
+        if not self.database_path.exists():
+            return []
+
+        query = (
+            select(chunks_table)
+            .where(chunks_table.c.snapshot_id == snapshot_id)
+            .order_by(
+                chunks_table.c.relative_path.asc(),
+                chunks_table.c.start_line.asc(),
+                chunks_table.c.start_byte.asc(),
+            )
+        )
+        with self.engine.begin() as connection:
+            rows = connection.execute(query).mappings().all()
+
+        return [self._row_to_record(row) for row in rows]
+
     @staticmethod
     def _row_to_record(row: Any) -> ChunkRecord:
         """Convert a row mapping into a chunk metadata DTO."""
