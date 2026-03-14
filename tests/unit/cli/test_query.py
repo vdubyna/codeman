@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -9,11 +8,13 @@ from typer.testing import CliRunner
 from codeman.application.query.run_lexical_query import LexicalBuildBaselineMissingError
 from codeman.bootstrap import bootstrap
 from codeman.cli.app import app
-from codeman.contracts.repository import RepositoryRecord, SnapshotRecord
 from codeman.contracts.retrieval import (
-    LexicalIndexBuildRecord,
-    LexicalQueryDiagnostics,
-    LexicalQueryMatch,
+    RetrievalBuildContext,
+    RetrievalQueryDiagnostics,
+    RetrievalQueryMetadata,
+    RetrievalRepositoryContext,
+    RetrievalResultItem,
+    RetrievalSnapshotContext,
     RunLexicalQueryResult,
 )
 
@@ -25,65 +26,49 @@ def build_query_result(
     *,
     query: str = "bootValue",
 ) -> RunLexicalQueryResult:
-    now = datetime.now(UTC)
-    repository = RepositoryRecord(
+    repository = RetrievalRepositoryContext(
         repository_id="repo-123",
         repository_name=repository_path.name,
-        canonical_path=repository_path,
-        requested_path=repository_path,
-        created_at=now,
-        updated_at=now,
     )
-    snapshot = SnapshotRecord(
+    snapshot = RetrievalSnapshotContext(
         snapshot_id="snapshot-123",
-        repository_id=repository.repository_id,
         revision_identity="revision-abc",
         revision_source="filesystem_fingerprint",
-        manifest_path=repository_path / "manifest.json",
-        created_at=now,
-        source_inventory_extracted_at=now,
-        chunk_generation_completed_at=now,
-        indexing_config_fingerprint="fingerprint-123",
     )
     return RunLexicalQueryResult(
         repository=repository,
         snapshot=snapshot,
-        build=LexicalIndexBuildRecord(
+        build=RetrievalBuildContext(
             build_id="build-123",
-            repository_id=repository.repository_id,
-            snapshot_id=snapshot.snapshot_id,
-            revision_identity=snapshot.revision_identity,
-            revision_source=snapshot.revision_source,
-            indexing_config_fingerprint="fingerprint-123",
             lexical_engine="sqlite-fts5",
             tokenizer_spec="unicode61 remove_diacritics 0 tokenchars '_'",
             indexed_fields=["content", "relative_path"],
-            chunks_indexed=2,
-            index_path=(
-                repository_path
-                / ".codeman"
-                / "indexes"
-                / "lexical"
-                / repository.repository_id
-                / snapshot.snapshot_id
-                / "lexical.sqlite3"
-            ),
-            created_at=now,
         ),
-        query=query,
-        matches=[
-            LexicalQueryMatch(
+        query=RetrievalQueryMetadata(text=query),
+        results=[
+            RetrievalResultItem(
                 chunk_id="chunk-123",
                 relative_path="assets/app.js",
                 language="javascript",
                 strategy="javascript_structure",
                 score=-1.0,
                 rank=1,
+                start_line=1,
+                end_line=3,
+                start_byte=0,
+                end_byte=48,
+                content_preview="export function bootValue() { return 'codeman'; }",
+                explanation=(
+                    "Matched lexical terms in content export function "
+                    "[bootValue]() { ... }."
+                ),
             )
         ],
-        diagnostics=LexicalQueryDiagnostics(
+        diagnostics=RetrievalQueryDiagnostics(
             match_count=1,
             query_latency_ms=3,
+            total_match_count=1,
+            truncated=False,
         ),
     )
 
@@ -108,9 +93,11 @@ def test_query_lexical_command_renders_text_summary(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0, result.stdout
-    assert "Lexical query matched 1 chunks" in result.stdout
+    assert "Lexical retrieval returned 1 results" in result.stdout
     assert "Query: bootValue" in result.stdout
     assert "assets/app.js" in result.stdout
+    assert "span: lines 1-3 bytes 0-48" in result.stdout
+    assert "preview: export function bootValue() { return 'codeman'; }" in result.stdout
 
 
 def test_query_lexical_command_accepts_option_like_query_via_explicit_flag(
@@ -151,7 +138,7 @@ def test_query_lexical_command_accepts_option_like_query_via_explicit_flag(
     assert result.exit_code == 0, result.stdout
     assert seen_requests[0].query_text == "--output-format"
     assert payload["ok"] is True
-    assert payload["data"]["query"] == "--output-format"
+    assert payload["data"]["query"]["text"] == "--output-format"
 
 
 def test_query_lexical_command_returns_json_failure_for_missing_baseline(

@@ -18,5 +18,6 @@ class LexicalQueryPort(Protocol):
         *,
         build: LexicalIndexBuildRecord,
         query_text: str,
+        max_results: int = 20,
     ) -> LexicalQueryResult:
         """Execute one lexical query against the provided build artifact."""

@@ -18,3 +18,6 @@ class ChunkStorePort(Protocol):
 
     def list_by_snapshot(self, snapshot_id: str) -> list[ChunkRecord]:
         """Return chunk rows for a snapshot ordered by path and span."""
+
+    def get_by_chunk_ids(self, chunk_ids: Sequence[str]) -> list[ChunkRecord]:
+        """Return chunk rows for the provided ids in the same order they were requested."""

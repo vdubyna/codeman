@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from codeman.contracts.repository import RepositoryRecord, SnapshotRecord, SourceLanguage
 
+RetrievalMode = Literal["lexical", "semantic", "hybrid"]
+
 
 class BuildLexicalIndexRequest(BaseModel):
     """Input DTO for building lexical index artifacts for a snapshot."""
@@ -92,6 +94,45 @@ class RunLexicalQueryRequest(BaseModel):
 
     repository_id: str
     query_text: str
+    max_results: int = Field(default=20, gt=0, le=100)
+
+
+class RetrievalQueryMetadata(BaseModel):
+    """Stable query metadata shared by retrieval result packages."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+
+
+class RetrievalRepositoryContext(BaseModel):
+    """Compact repository identity for retrieval output."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository_id: str
+    repository_name: str
+
+
+class RetrievalSnapshotContext(BaseModel):
+    """Compact snapshot identity for retrieval output."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: str
+    revision_identity: str
+    revision_source: Literal["git", "filesystem_fingerprint"]
+
+
+class RetrievalBuildContext(BaseModel):
+    """Compact build identity for retrieval output."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    build_id: str
+    lexical_engine: str
+    tokenizer_spec: str
+    indexed_fields: list[str] = Field(default_factory=list)
 
 
 class LexicalQueryMatch(BaseModel):
@@ -105,15 +146,25 @@ class LexicalQueryMatch(BaseModel):
     strategy: str
     score: float
     rank: int
+    path_match_context: str | None = None
+    content_match_context: str | None = None
+    path_match_highlighted: bool = False
+    content_match_highlighted: bool = False
 
 
-class LexicalQueryDiagnostics(BaseModel):
-    """Minimal diagnostics safe for CLI and JSON lexical query output."""
+class RetrievalQueryDiagnostics(BaseModel):
+    """Minimal diagnostics safe for retrieval CLI and JSON output."""
 
     model_config = ConfigDict(extra="forbid")
 
     match_count: int = 0
     query_latency_ms: int = 0
+    total_match_count: int = 0
+    truncated: bool = False
+
+
+class LexicalQueryDiagnostics(RetrievalQueryDiagnostics):
+    """Minimal diagnostics safe for CLI and JSON lexical query output."""
 
 
 class LexicalQueryResult(BaseModel):
@@ -125,14 +176,40 @@ class LexicalQueryResult(BaseModel):
     diagnostics: LexicalQueryDiagnostics
 
 
-class RunLexicalQueryResult(BaseModel):
-    """Output DTO for successful lexical-query execution."""
+class RetrievalResultItem(BaseModel):
+    """Stable result item shared by retrieval result packages."""
 
     model_config = ConfigDict(extra="forbid")
 
-    repository: RepositoryRecord
-    snapshot: SnapshotRecord
-    build: LexicalIndexBuildRecord
-    query: str
-    matches: list[LexicalQueryMatch] = Field(default_factory=list)
-    diagnostics: LexicalQueryDiagnostics
+    chunk_id: str
+    relative_path: str
+    language: SourceLanguage
+    strategy: str
+    rank: int
+    score: float
+    start_line: int
+    end_line: int
+    start_byte: int
+    end_byte: int
+    content_preview: str
+    explanation: str
+
+
+class RetrievalResultPackage(BaseModel):
+    """Shared agent-friendly retrieval package for CLI and future retrieval modes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    retrieval_mode: RetrievalMode
+    query: RetrievalQueryMetadata
+    repository: RetrievalRepositoryContext
+    snapshot: RetrievalSnapshotContext
+    build: RetrievalBuildContext
+    results: list[RetrievalResultItem] = Field(default_factory=list)
+    diagnostics: RetrievalQueryDiagnostics
+
+
+class RunLexicalQueryResult(RetrievalResultPackage):
+    """Output DTO for successful lexical-query execution."""
+
+    retrieval_mode: Literal["lexical"] = "lexical"

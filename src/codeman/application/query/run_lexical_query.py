@@ -4,17 +4,32 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pydantic import ValidationError
+
+from codeman.application.ports.artifact_store_port import ArtifactStorePort
+from codeman.application.ports.chunk_store_port import ChunkStorePort
 from codeman.application.ports.index_build_store_port import IndexBuildStorePort
 from codeman.application.ports.lexical_query_port import LexicalQueryPort
 from codeman.application.ports.metadata_store_port import RepositoryMetadataStorePort
 from codeman.application.ports.snapshot_port import SnapshotMetadataStorePort
+from codeman.application.query.format_results import (
+    ResolvedLexicalMatch,
+    RetrievalResultFormatter,
+)
 from codeman.contracts.errors import ErrorCode
-from codeman.contracts.retrieval import RunLexicalQueryRequest, RunLexicalQueryResult
+from codeman.contracts.retrieval import (
+    LexicalQueryMatch,
+    RunLexicalQueryRequest,
+    RunLexicalQueryResult,
+)
 from codeman.runtime import RuntimePaths, provision_runtime_paths
 
 __all__ = [
     "LexicalArtifactMissingError",
     "LexicalBuildBaselineMissingError",
+    "LexicalQueryChunkMetadataMissingError",
+    "LexicalQueryChunkPayloadCorruptError",
+    "LexicalQueryChunkPayloadMissingError",
     "LexicalQueryError",
     "LexicalQueryRepositoryNotRegisteredError",
     "RunLexicalQueryUseCase",
@@ -53,6 +68,27 @@ class LexicalBuildBaselineMissingError(LexicalQueryError):
     error_code = ErrorCode.LEXICAL_BUILD_BASELINE_MISSING
 
 
+class LexicalQueryChunkMetadataMissingError(LexicalQueryError):
+    """Raised when lexical hits cannot be resolved back to persisted chunk metadata."""
+
+    exit_code = 40
+    error_code = ErrorCode.CHUNK_METADATA_MISSING
+
+
+class LexicalQueryChunkPayloadMissingError(LexicalQueryError):
+    """Raised when a persisted chunk payload artifact is missing."""
+
+    exit_code = 41
+    error_code = ErrorCode.CHUNK_PAYLOAD_MISSING
+
+
+class LexicalQueryChunkPayloadCorruptError(LexicalQueryError):
+    """Raised when a persisted chunk payload artifact cannot be trusted."""
+
+    exit_code = 42
+    error_code = ErrorCode.CHUNK_PAYLOAD_CORRUPT
+
+
 @dataclass(slots=True)
 class RunLexicalQueryUseCase:
     """Resolve the current lexical build for a repository and execute one query."""
@@ -61,7 +97,10 @@ class RunLexicalQueryUseCase:
     repository_store: RepositoryMetadataStorePort
     snapshot_store: SnapshotMetadataStorePort
     index_build_store: IndexBuildStorePort
+    chunk_store: ChunkStorePort
+    artifact_store: ArtifactStorePort
     lexical_query: LexicalQueryPort
+    formatter: RetrievalResultFormatter
 
     def execute(self, request: RunLexicalQueryRequest) -> RunLexicalQueryResult:
         """Run a lexical query against the current repository build."""
@@ -70,6 +109,7 @@ class RunLexicalQueryUseCase:
         self.repository_store.initialize()
         self.snapshot_store.initialize()
         self.index_build_store.initialize()
+        self.chunk_store.initialize()
 
         repository = self.repository_store.get_by_repository_id(request.repository_id)
         if repository is None:
@@ -100,6 +140,7 @@ class RunLexicalQueryUseCase:
             query_result = self.lexical_query.query(
                 build=build,
                 query_text=request.query_text,
+                max_results=request.max_results,
             )
         except LexicalQueryError:
             raise
@@ -108,11 +149,60 @@ class RunLexicalQueryUseCase:
                 f"Lexical query failed for repository: {request.repository_id}",
             ) from exc
 
-        return RunLexicalQueryResult(
+        resolved_matches = self._resolve_matches(query_result.matches)
+        return self.formatter.format_lexical_results(
             repository=repository,
             snapshot=snapshot,
             build=build,
-            query=request.query_text,
-            matches=list(query_result.matches),
+            query_text=request.query_text,
             diagnostics=query_result.diagnostics,
+            matches=resolved_matches,
         )
+
+    def _resolve_matches(
+        self,
+        matches: list[LexicalQueryMatch],
+    ) -> list[ResolvedLexicalMatch]:
+        if not matches:
+            return []
+
+        chunk_ids = [match.chunk_id for match in matches]
+        chunks = self.chunk_store.get_by_chunk_ids(chunk_ids)
+        chunks_by_id = {chunk.chunk_id: chunk for chunk in chunks}
+        missing_chunk_ids = [
+            chunk_id for chunk_id in chunk_ids if chunk_id not in chunks_by_id
+        ]
+        if missing_chunk_ids:
+            missing_list = ", ".join(missing_chunk_ids)
+            raise LexicalQueryChunkMetadataMissingError(
+                f"Chunk metadata is missing for ranked retrieval result(s): {missing_list}",
+            )
+
+        resolved_matches: list[ResolvedLexicalMatch] = []
+        for match in matches:
+            chunk = chunks_by_id[match.chunk_id]
+            try:
+                payload = self.artifact_store.read_chunk_payload(chunk.payload_path)
+            except FileNotFoundError as exc:
+                raise LexicalQueryChunkPayloadMissingError(
+                    f"Chunk payload artifact is missing for retrieval result: {chunk.chunk_id}",
+                ) from exc
+            except (ValidationError, ValueError) as exc:
+                raise LexicalQueryChunkPayloadCorruptError(
+                    f"Chunk payload artifact is invalid for retrieval result: {chunk.chunk_id}",
+                ) from exc
+
+            if payload.chunk_id != chunk.chunk_id or payload.snapshot_id != chunk.snapshot_id:
+                raise LexicalQueryChunkPayloadCorruptError(
+                    f"Chunk payload artifact does not match retrieval metadata: {chunk.chunk_id}",
+                )
+
+            resolved_matches.append(
+                ResolvedLexicalMatch(
+                    match=match,
+                    chunk=chunk,
+                    payload=payload,
+                )
+            )
+
+        return resolved_matches

@@ -112,6 +112,22 @@ class SqliteChunkStore(ChunkStorePort):
 
         return [self._row_to_record(row) for row in rows]
 
+    def get_by_chunk_ids(self, chunk_ids: Sequence[str]) -> list[ChunkRecord]:
+        """Return chunk rows for the provided ids in the same incoming order."""
+
+        if not self.database_path.exists() or not chunk_ids:
+            return []
+
+        query = select(chunks_table).where(chunks_table.c.id.in_(list(chunk_ids)))
+        with self.engine.begin() as connection:
+            rows = connection.execute(query).mappings().all()
+
+        rows_by_id = {
+            row["id"]: self._row_to_record(row)
+            for row in rows
+        }
+        return [rows_by_id[chunk_id] for chunk_id in chunk_ids if chunk_id in rows_by_id]
+
     @staticmethod
     def _row_to_record(row: Any) -> ChunkRecord:
         """Convert a row mapping into a chunk metadata DTO."""

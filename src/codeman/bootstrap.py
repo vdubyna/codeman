@@ -8,6 +8,7 @@ from pathlib import Path
 from codeman.application.indexing.build_chunks import BuildChunksUseCase
 from codeman.application.indexing.build_lexical_index import BuildLexicalIndexUseCase
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesUseCase
+from codeman.application.query.format_results import RetrievalResultFormatter
 from codeman.application.query.run_lexical_query import RunLexicalQueryUseCase
 from codeman.application.repo.create_snapshot import CreateSnapshotUseCase
 from codeman.application.repo.register_repository import RegisterRepositoryUseCase
@@ -157,7 +158,10 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         repository_store=metadata_store,
         snapshot_store=snapshot_store,
         index_build_store=index_build_store,
+        chunk_store=chunk_store,
+        artifact_store=artifact_store,
         lexical_query=SqliteFts5LexicalQueryEngine(),
+        formatter=RetrievalResultFormatter(),
     )
     reindex_repository = ReindexRepositoryUseCase(
         runtime_paths=runtime_paths,

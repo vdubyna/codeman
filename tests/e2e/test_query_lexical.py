@@ -280,14 +280,25 @@ def test_uv_run_query_lexical_supports_text_and_json_output(tmp_path: Path) -> N
 
     assert text_result.returncode == 0, text_result.stderr
     assert json_result.returncode == 0, json_result.stderr
-    assert "Lexical query matched" in text_result.stdout
+    assert "Lexical retrieval returned" in text_result.stdout
     assert "src/Controller/HomeController.php" in text_result.stdout
+    assert "span: lines" in text_result.stdout
+    assert "preview:" in text_result.stdout
+    assert "explanation:" in text_result.stdout
     assert payload["ok"] is True
-    assert payload["data"]["query"] == "HomeController"
+    assert payload["data"]["retrieval_mode"] == "lexical"
+    assert payload["data"]["query"]["text"] == "HomeController"
     assert payload["data"]["diagnostics"]["match_count"] >= 1
     assert any(
-        match["relative_path"] == "src/Controller/HomeController.php"
-        for match in payload["data"]["matches"]
+        item["chunk_id"]
+        and item["start_line"] >= 1
+        and item["content_preview"]
+        and item["explanation"]
+        for item in payload["data"]["results"]
+    )
+    assert any(
+        item["relative_path"] == "src/Controller/HomeController.php"
+        for item in payload["data"]["results"]
     )
     assert "Running lexical query for repository" in text_result.stderr
     assert "Running lexical query for repository" in json_result.stderr
@@ -361,8 +372,8 @@ def test_uv_run_query_lexical_accepts_option_like_query_values(tmp_path: Path) -
 
     assert result.returncode == 0, result.stderr
     assert payload["ok"] is True
-    assert payload["data"]["query"] == "--output-format"
+    assert payload["data"]["query"]["text"] == "--output-format"
     assert any(
-        match["relative_path"] == "assets/flags.js"
-        for match in payload["data"]["matches"]
+        item["relative_path"] == "assets/flags.js"
+        for item in payload["data"]["results"]
     )

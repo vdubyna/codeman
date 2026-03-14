@@ -91,7 +91,15 @@ def test_sqlite_fts5_query_engine_matches_symbols_paths_and_safe_punctuation(
         "chunk-1",
         "chunk-2",
     ]
+    assert snake_case_result.matches[0].content_match_context is not None
+    assert "[snake_case]" in snake_case_result.matches[0].content_match_context
+    assert snake_case_result.matches[0].content_match_highlighted is True
+    assert path_result.matches[0].path_match_context is not None
+    assert "[src/Controller/HomeController.php]" == path_result.matches[0].path_match_context
+    assert path_result.matches[0].path_match_highlighted is True
     assert punctuation_result.diagnostics.match_count == 2
+    assert punctuation_result.diagnostics.total_match_count == 2
+    assert punctuation_result.diagnostics.truncated is False
 
 
 def test_sqlite_fts5_query_engine_orders_ties_by_chunk_id(tmp_path: Path) -> None:
@@ -131,3 +139,38 @@ def test_sqlite_fts5_query_engine_orders_ties_by_chunk_id(tmp_path: Path) -> Non
 
     assert [match.chunk_id for match in result.matches] == ["chunk-a", "chunk-b"]
     assert [match.rank for match in result.matches] == [1, 2]
+
+
+def test_sqlite_fts5_query_engine_limits_result_count_and_reports_truncation(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    runtime_paths = build_runtime_paths(workspace)
+    builder = SqliteFts5LexicalIndexBuilder(runtime_paths=runtime_paths)
+    engine = SqliteFts5LexicalQueryEngine()
+
+    artifact = builder.build(
+        repository_id="repo-123",
+        snapshot_id="snapshot-123",
+        documents=[
+            LexicalIndexDocument(
+                chunk_id=f"chunk-{index}",
+                snapshot_id="snapshot-123",
+                repository_id="repo-123",
+                relative_path=f"assets/file-{index}.js",
+                language="javascript",
+                strategy="javascript_structure",
+                content="export function bootValue() { return true; }",
+            )
+            for index in range(5)
+        ],
+    )
+    build = build_record(artifact.index_path)
+
+    result = engine.query(build=build, query_text="bootValue", max_results=2)
+
+    assert len(result.matches) == 2
+    assert result.diagnostics.match_count == 2
+    assert result.diagnostics.total_match_count == 5
+    assert result.diagnostics.truncated is True

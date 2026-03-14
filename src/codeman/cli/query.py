@@ -99,24 +99,42 @@ def lexical(
         emit_json_response(envelope)
         return
 
+    summary_line = (
+        "Lexical retrieval returned "
+        f"{result.diagnostics.match_count} of "
+        f"{result.diagnostics.total_match_count} results (truncated)"
+        if result.diagnostics.truncated
+        else f"Lexical retrieval returned {result.diagnostics.match_count} results"
+    )
+
     lines = [
-        f"Lexical query matched {result.diagnostics.match_count} chunks",
+        summary_line,
+        f"Retrieval Mode: {result.retrieval_mode}",
         f"Repository ID: {result.repository.repository_id}",
         f"Snapshot ID: {result.snapshot.snapshot_id}",
         f"Build ID: {result.build.build_id}",
-        f"Query: {result.query}",
+        f"Query: {result.query.text}",
         f"Latency: {result.diagnostics.query_latency_ms} ms",
     ]
-    if result.matches:
+    if result.results:
         lines.extend(
             [
-                (
-                    f"{match.rank}. {match.relative_path} "
-                    f"[{match.chunk_id}] "
-                    f"{match.language}/{match.strategy} "
-                    f"score={match.score:.4f}"
+                "\n".join(
+                    [
+                        f"{item.rank}. {item.relative_path} [{item.chunk_id}]",
+                        (
+                            f"   span: lines {item.start_line}-{item.end_line} "
+                            f"bytes {item.start_byte}-{item.end_byte}"
+                        ),
+                        (
+                            f"   language/strategy: {item.language}/{item.strategy} "
+                            f"score={item.score:.4f}"
+                        ),
+                        f"   preview: {item.content_preview}",
+                        f"   explanation: {item.explanation}",
+                    ]
                 )
-                for match in result.matches
+                for item in result.results
             ]
         )
     else:

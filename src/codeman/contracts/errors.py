@@ -44,6 +44,7 @@ class ErrorCode:
     SOURCE_INVENTORY_MISSING = "source_inventory_missing"
     CHUNK_GENERATION_FAILED = "chunk_generation_failed"
     CHUNK_BASELINE_MISSING = "chunk_baseline_missing"
+    CHUNK_METADATA_MISSING = "chunk_metadata_missing"
     CHUNK_PAYLOAD_MISSING = "chunk_payload_missing"
     CHUNK_PAYLOAD_CORRUPT = "chunk_payload_corrupt"
     INDEXED_BASELINE_MISSING = "indexed_baseline_missing"
