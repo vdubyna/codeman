@@ -323,3 +323,208 @@ hybrid fusion and component provenance nested under `data.build`, and per-compon
 When `data.diagnostics.total_match_count_is_lower_bound` is `true`, the reported hybrid
 `total_match_count` is a truthful lower bound rather than an exact union size because at least one
 component retriever was truncated before fusion.
+
+## Compare Commands
+
+```bash
+uv run codeman compare query-modes <repository-id> "controller home route"
+uv run codeman compare query-modes <repository-id> "controller home route" --output-format json
+uv run codeman compare query-modes <repository-id> --query="--query" --output-format json
+```
+
+`compare query-modes` executes lexical retrieval, semantic retrieval, and one hybrid fusion workflow
+for the same repository query, then returns a single attributable comparison package.
+The command is still local-first and artifact-only: it reuses the current persisted lexical and semantic
+baselines for the repository instead of rescanning source files or rereading mutated working-tree content.
+If either required component baseline is unavailable, the command fails with
+`compare_retrieval_mode_baseline_missing`.
+If one compared mode is unavailable because of artifact corruption, provider initialization failure, or
+another underlying retrieval-path problem, the command fails with `compare_retrieval_mode_unavailable`.
+If lexical and semantic comparison inputs resolve different repository snapshots, the command fails with
+`compare_retrieval_mode_snapshot_mismatch` instead of presenting a misleading side-by-side comparison.
+
+Text output includes:
+- Shared repository, snapshot, query, latency, and compared-mode metadata for the full comparison run.
+- One summary line per mode using the same returned-count and truncation semantics as the standalone
+  query commands.
+- A compact rank-alignment section keyed by `chunk_id`, showing lexical, semantic, and hybrid ranks plus
+  rank deltas when hybrid also contains the chunk.
+- Clearly labeled `Lexical Results`, `Semantic Results`, and `Hybrid Results` blocks that preserve the
+  standard ranked retrieval item shape.
+
+JSON output keeps the standard success envelope on `stdout` and exposes a stable comparison package:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "query": {
+      "text": "controller home route"
+    },
+    "repository": {
+      "repository_id": "repo-123",
+      "repository_name": "registered-repo"
+    },
+    "snapshot": {
+      "snapshot_id": "snapshot-123",
+      "revision_identity": "revision-abc",
+      "revision_source": "filesystem_fingerprint"
+    },
+    "entries": [
+      {
+        "retrieval_mode": "lexical",
+        "build": {
+          "build_id": "lexical-build-123",
+          "lexical_engine": "sqlite-fts5",
+          "tokenizer_spec": "unicode61 remove_diacritics 0 tokenchars '_'",
+          "indexed_fields": ["content", "relative_path"]
+        },
+        "diagnostics": {
+          "match_count": 2,
+          "query_latency_ms": 4,
+          "total_match_count": 2,
+          "truncated": false
+        },
+        "results": [
+          {
+            "chunk_id": "chunk-shared",
+            "relative_path": "src/Controller/HomeController.php",
+            "language": "php",
+            "strategy": "php_structure",
+            "rank": 1,
+            "score": -1.0,
+            "start_line": 4,
+            "end_line": 10,
+            "start_byte": 32,
+            "end_byte": 180,
+            "content_preview": "final class HomeController { public function __invoke(): string { return 'home'; } }",
+            "explanation": "Matched lexical terms in path src/Controller/[HomeController].php."
+          }
+        ]
+      },
+      {
+        "retrieval_mode": "semantic",
+        "build": {
+          "build_id": "semantic-build-123",
+          "provider_id": "local-hash",
+          "model_id": "fixture-local",
+          "model_version": "2026-03-14",
+          "vector_engine": "sqlite-exact",
+          "semantic_config_fingerprint": "semantic-fingerprint-123"
+        },
+        "diagnostics": {
+          "match_count": 2,
+          "query_latency_ms": 7,
+          "total_match_count": 5,
+          "truncated": false
+        },
+        "results": [
+          {
+            "chunk_id": "chunk-shared",
+            "relative_path": "src/Controller/HomeController.php",
+            "language": "php",
+            "strategy": "php_structure",
+            "rank": 1,
+            "score": 0.92,
+            "start_line": 4,
+            "end_line": 10,
+            "start_byte": 32,
+            "end_byte": 180,
+            "content_preview": "final class HomeController { public function __invoke(): string { return 'home'; } }",
+            "explanation": "Ranked by embedding similarity against the persisted semantic index."
+          }
+        ]
+      },
+      {
+        "retrieval_mode": "hybrid",
+        "build": {
+          "build_id": "hybrid-123abc456def",
+          "fusion_strategy": "rrf",
+          "rank_constant": 60,
+          "rank_window_size": 50,
+          "lexical_build": {
+            "build_id": "lexical-build-123",
+            "lexical_engine": "sqlite-fts5",
+            "tokenizer_spec": "unicode61 remove_diacritics 0 tokenchars '_'",
+            "indexed_fields": ["content", "relative_path"]
+          },
+          "semantic_build": {
+            "build_id": "semantic-build-123",
+            "provider_id": "local-hash",
+            "model_id": "fixture-local",
+            "model_version": "2026-03-14",
+            "vector_engine": "sqlite-exact",
+            "semantic_config_fingerprint": "semantic-fingerprint-123"
+          }
+        },
+        "diagnostics": {
+          "match_count": 2,
+          "query_latency_ms": 9,
+          "total_match_count": 4,
+          "truncated": true,
+          "fusion_strategy": "rrf",
+          "rank_constant": 60,
+          "rank_window_size": 50,
+          "total_match_count_is_lower_bound": false,
+          "degraded": false,
+          "degraded_reason": null,
+          "lexical": {
+            "match_count": 2,
+            "query_latency_ms": 4,
+            "total_match_count": 2,
+            "truncated": false,
+            "contributed_result_count": 2
+          },
+          "semantic": {
+            "match_count": 2,
+            "query_latency_ms": 7,
+            "total_match_count": 5,
+            "truncated": false,
+            "contributed_result_count": 1
+          }
+        },
+        "results": [
+          {
+            "chunk_id": "chunk-shared",
+            "relative_path": "src/Controller/HomeController.php",
+            "language": "php",
+            "strategy": "php_structure",
+            "rank": 1,
+            "score": 0.0328,
+            "start_line": 4,
+            "end_line": 10,
+            "start_byte": 32,
+            "end_byte": 180,
+            "content_preview": "final class HomeController { public function __invoke(): string { return 'home'; } }",
+            "explanation": "Fused hybrid rank from lexical and semantic evidence for this persisted chunk."
+          }
+        ]
+      }
+    ],
+    "alignment": [
+      {
+        "chunk_id": "chunk-shared",
+        "relative_path": "src/Controller/HomeController.php",
+        "language": "php",
+        "strategy": "php_structure",
+        "lexical_rank": 1,
+        "semantic_rank": 1,
+        "hybrid_rank": 1,
+        "lexical_score": -1.0,
+        "semantic_score": 0.92,
+        "hybrid_score": 0.0328
+      }
+    ],
+    "diagnostics": {
+      "compared_modes": ["lexical", "semantic", "hybrid"],
+      "alignment_count": 1,
+      "overlap_count": 1,
+      "query_latency_ms": 11
+    }
+  },
+  "meta": {
+    "command": "compare.query_modes",
+    "output_format": "json"
+  }
+}
+```

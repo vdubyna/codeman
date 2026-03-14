@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-03-13 23:42:21 +0200"
-last_updated: "2026-03-14 21:55:35 +0200"
+last_updated: "2026-03-14 21:36:00 +0200"
 project: codeman
 project_key: NOKEY
 tracking_system: file-system
@@ -58,7 +58,7 @@ development_status:
   2-4-build-semantic-retrieval-index-artifacts: done
   2-5-run-semantic-retrieval-queries: done
   2-6-run-hybrid-retrieval-with-fused-ranking: done
-  2-7-compare-retrieval-modes-for-the-same-question: backlog
+  2-7-compare-retrieval-modes-for-the-same-question: done
   epic-2-retrospective: optional
 
   epic-3: backlog

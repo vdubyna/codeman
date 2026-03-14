@@ -8,17 +8,22 @@ from codeman.application.query.run_hybrid_query import HybridQueryError
 from codeman.application.query.run_lexical_query import LexicalQueryError
 from codeman.application.query.run_semantic_query import SemanticQueryError
 from codeman.bootstrap import BootstrapContainer
-from codeman.cli.common import OutputFormat, build_command_meta, emit_json_response
+from codeman.cli.common import (
+    OutputFormat,
+    build_command_meta,
+    build_retrieval_summary_line,
+    emit_failure_response,
+    emit_json_response,
+    render_retrieval_result_blocks,
+    resolve_query_text,
+)
 from codeman.contracts.common import SuccessEnvelope
-from codeman.contracts.errors import ErrorDetail, FailureEnvelope
 from codeman.contracts.retrieval import (
     HybridComponentQueryDiagnostics,
     RunHybridQueryRequest,
     RunHybridQueryResult,
     RunLexicalQueryRequest,
-    RunLexicalQueryResult,
     RunSemanticQueryRequest,
-    RunSemanticQueryResult,
 )
 
 app = typer.Typer(help="Retrieval query commands.", no_args_is_help=True)
@@ -37,76 +42,14 @@ def _handle_query_error(
 ) -> None:
     """Render retrieval-query failures in the requested output format."""
 
-    envelope = FailureEnvelope(
-        error=ErrorDetail(
-            code=error.error_code,
-            message=error.message,
-            details=getattr(error, "details", None),
-        ),
-        meta=build_command_meta(command_name, output_format),
+    emit_failure_response(
+        error_code=error.error_code,
+        message=error.message,
+        details=getattr(error, "details", None),
+        exit_code=error.exit_code,
+        output_format=output_format,
+        command_name=command_name,
     )
-    if output_format is OutputFormat.JSON:
-        emit_json_response(envelope)
-    else:
-        typer.secho(error.message, err=True, fg=typer.colors.RED)
-
-    raise typer.Exit(code=error.exit_code)
-
-
-def _resolve_query_text(
-    *,
-    query_text: str | None,
-    query: str | None,
-) -> str:
-    if query_text is not None and query is not None:
-        typer.secho(
-            "Provide either QUERY or --query, not both.",
-            err=True,
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(code=2)
-
-    resolved_query = query if query is not None else query_text
-    if resolved_query is None:
-        typer.secho(
-            "Query text is required. Provide QUERY or --query.",
-            err=True,
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(code=2)
-    return resolved_query
-
-
-def _result_blocks(
-    result: RunLexicalQueryResult | RunSemanticQueryResult | RunHybridQueryResult,
-) -> list[str]:
-    return [
-        "\n".join(
-            [
-                f"{item.rank}. {item.relative_path} [{item.chunk_id}]",
-                (
-                    f"   span: lines {item.start_line}-{item.end_line} "
-                    f"bytes {item.start_byte}-{item.end_byte}"
-                ),
-                (f"   language/strategy: {item.language}/{item.strategy} score={item.score:.4f}"),
-                f"   preview: {item.content_preview}",
-                f"   explanation: {item.explanation}",
-            ]
-        )
-        for item in result.results
-    ]
-
-
-def _summary_line(
-    *,
-    result_count: int,
-    total_count: int,
-    truncated: bool,
-    label: str,
-) -> str:
-    if truncated:
-        return f"{label} returned {result_count} of {total_count} results (truncated)"
-    return f"{label} returned {result_count} results"
 
 
 def _hybrid_component_line(
@@ -146,7 +89,7 @@ def lexical(
 
     from codeman.cli.app import get_container
 
-    resolved_query = _resolve_query_text(query_text=query_text, query=query)
+    resolved_query = resolve_query_text(query_text=query_text, query=query)
 
     typer.echo(
         f"Running lexical query for repository: {repository_id}",
@@ -176,7 +119,7 @@ def lexical(
         return
 
     lines = [
-        _summary_line(
+        build_retrieval_summary_line(
             result_count=result.diagnostics.match_count,
             total_count=result.diagnostics.total_match_count,
             truncated=result.diagnostics.truncated,
@@ -190,7 +133,7 @@ def lexical(
         f"Latency: {result.diagnostics.query_latency_ms} ms",
     ]
     if result.results:
-        lines.extend(_result_blocks(result))
+        lines.extend(render_retrieval_result_blocks(result.results))
     else:
         lines.append("No lexical matches found.")
     typer.echo("\n".join(lines))
@@ -212,7 +155,7 @@ def semantic(
 
     from codeman.cli.app import get_container
 
-    resolved_query = _resolve_query_text(query_text=query_text, query=query)
+    resolved_query = resolve_query_text(query_text=query_text, query=query)
 
     typer.echo(
         f"Running semantic query for repository: {repository_id}",
@@ -242,7 +185,7 @@ def semantic(
         return
 
     lines = [
-        _summary_line(
+        build_retrieval_summary_line(
             result_count=result.diagnostics.match_count,
             total_count=result.diagnostics.total_match_count,
             truncated=result.diagnostics.truncated,
@@ -261,7 +204,7 @@ def semantic(
         f"Latency: {result.diagnostics.query_latency_ms} ms",
     ]
     if result.results:
-        lines.extend(_result_blocks(result))
+        lines.extend(render_retrieval_result_blocks(result.results))
     else:
         lines.append("No semantic matches found.")
     typer.echo("\n".join(lines))
@@ -283,7 +226,7 @@ def hybrid(
 
     from codeman.cli.app import get_container
 
-    resolved_query = _resolve_query_text(query_text=query_text, query=query)
+    resolved_query = resolve_query_text(query_text=query_text, query=query)
 
     typer.echo(
         f"Running hybrid query for repository: {repository_id}",
@@ -313,7 +256,7 @@ def hybrid(
         return
 
     lines = [
-        _summary_line(
+        build_retrieval_summary_line(
             result_count=result.diagnostics.match_count,
             total_count=result.diagnostics.total_match_count,
             truncated=result.diagnostics.truncated,
@@ -346,7 +289,7 @@ def hybrid(
         ),
     ]
     if result.results:
-        lines.extend(_result_blocks(result))
+        lines.extend(render_retrieval_result_blocks(result.results))
     else:
         lines.append("No hybrid matches found.")
     total_count_note = _hybrid_total_count_note(result)

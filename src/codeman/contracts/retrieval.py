@@ -266,6 +266,16 @@ class RunHybridQueryRequest(BaseModel):
     max_results: int = Field(default=20, gt=0, le=100)
 
 
+class CompareRetrievalModesRequest(BaseModel):
+    """Input DTO for retrieval-mode comparison execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository_id: str
+    query_text: str
+    max_results: int = Field(default=20, gt=0, le=100)
+
+
 class RetrievalQueryMetadata(BaseModel):
     """Stable query metadata shared by retrieval result packages."""
 
@@ -465,3 +475,59 @@ class RunHybridQueryResult(RetrievalResultPackage):
     retrieval_mode: Literal["hybrid"] = "hybrid"
     build: HybridRetrievalBuildContext
     diagnostics: HybridQueryDiagnostics
+
+
+class RetrievalModeComparisonEntry(BaseModel):
+    """One mode-specific retrieval package nested under a comparison result."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    retrieval_mode: RetrievalMode
+    build: (
+        LexicalRetrievalBuildContext | SemanticRetrievalBuildContext | HybridRetrievalBuildContext
+    )
+    diagnostics: RetrievalQueryDiagnostics | HybridQueryDiagnostics
+    results: list[RetrievalResultItem] = Field(default_factory=list)
+
+
+class RetrievalModeRankAlignment(BaseModel):
+    """Deterministic rank alignment for one chunk across compared retrieval modes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_id: str
+    relative_path: str
+    language: SourceLanguage
+    strategy: str
+    lexical_rank: int | None = None
+    semantic_rank: int | None = None
+    hybrid_rank: int | None = None
+    lexical_score: float | None = None
+    semantic_score: float | None = None
+    hybrid_score: float | None = None
+
+
+class CompareRetrievalModesDiagnostics(BaseModel):
+    """Top-level diagnostics for retrieval-mode comparison execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    compared_modes: list[RetrievalMode] = Field(
+        default_factory=lambda: ["lexical", "semantic", "hybrid"]
+    )
+    alignment_count: int = 0
+    overlap_count: int = 0
+    query_latency_ms: int = 0
+
+
+class CompareRetrievalModesResult(BaseModel):
+    """Output DTO for successful retrieval-mode comparison execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: RetrievalQueryMetadata
+    repository: RetrievalRepositoryContext
+    snapshot: RetrievalSnapshotContext
+    entries: list[RetrievalModeComparisonEntry] = Field(default_factory=list)
+    alignment: list[RetrievalModeRankAlignment] = Field(default_factory=list)
+    diagnostics: CompareRetrievalModesDiagnostics

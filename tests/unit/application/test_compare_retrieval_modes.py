@@ -4,24 +4,24 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from codeman.application.query.run_hybrid_query import (
-    DEFAULT_HYBRID_CANDIDATE_WINDOW,
-    HybridComponentBaselineMissingError,
-    HybridComponentUnavailableError,
-    HybridSnapshotMismatchError,
-    RunHybridQueryUseCase,
-    compose_hybrid_result_from_components,
+from codeman.application.query.compare_retrieval_modes import (
+    CompareRetrievalModesBaselineMissingError,
+    CompareRetrievalModesModeUnavailableError,
+    CompareRetrievalModesSnapshotMismatchError,
+    CompareRetrievalModesUseCase,
 )
-from codeman.application.query.run_lexical_query import LexicalBuildBaselineMissingError
-from codeman.application.query.run_semantic_query import SemanticQueryProviderUnavailableError
+from codeman.application.query.run_semantic_query import (
+    SemanticBuildBaselineMissingError,
+    SemanticQueryProviderUnavailableError,
+)
 from codeman.contracts.retrieval import (
+    CompareRetrievalModesRequest,
     LexicalRetrievalBuildContext,
     RetrievalQueryDiagnostics,
     RetrievalQueryMetadata,
     RetrievalRepositoryContext,
     RetrievalResultItem,
     RetrievalSnapshotContext,
-    RunHybridQueryRequest,
     RunLexicalQueryRequest,
     RunLexicalQueryResult,
     RunSemanticQueryRequest,
@@ -174,97 +174,69 @@ class StubRunSemanticQueryUseCase:
         return self.result
 
 
-def test_run_hybrid_query_requests_internal_candidate_window_and_fuses_results() -> None:
+def test_compare_retrieval_modes_returns_stable_mode_order_and_alignment() -> None:
     lexical = StubRunLexicalQueryUseCase(result=build_lexical_result())
     semantic = StubRunSemanticQueryUseCase(result=build_semantic_result())
-    use_case = RunHybridQueryUseCase(
+    use_case = CompareRetrievalModesUseCase(
         run_lexical_query=lexical,
         run_semantic_query=semantic,
     )
 
     result = use_case.execute(
-        RunHybridQueryRequest(
+        CompareRetrievalModesRequest(
             repository_id="repo-123",
             query_text="controller home route",
-        ),
-    )
-
-    assert lexical.seen_requests[0].max_results == DEFAULT_HYBRID_CANDIDATE_WINDOW
-    assert semantic.seen_requests[0].max_results == DEFAULT_HYBRID_CANDIDATE_WINDOW
-    assert result.retrieval_mode == "hybrid"
-    assert result.build.lexical_build.build_id == "lexical-build-123"
-    assert result.build.semantic_build.build_id == "semantic-build-123"
-    assert result.diagnostics.lexical.match_count == 2
-    assert result.diagnostics.semantic.match_count == 2
-    assert result.results[0].chunk_id == "chunk-shared"
-    assert result.results[0].explanation == (
-        "Fused hybrid rank from lexical and semantic evidence for this persisted chunk."
-    )
-
-
-def test_run_hybrid_query_allows_zero_match_component_without_marking_degraded() -> None:
-    lexical_result = build_lexical_result().model_copy(
-        update={
-            "results": [],
-            "diagnostics": RetrievalQueryDiagnostics(
-                match_count=0,
-                query_latency_ms=1,
-                total_match_count=0,
-                truncated=False,
-            ),
-        }
-    )
-    lexical = StubRunLexicalQueryUseCase(result=lexical_result)
-    semantic = StubRunSemanticQueryUseCase(result=build_semantic_result())
-    use_case = RunHybridQueryUseCase(
-        run_lexical_query=lexical,
-        run_semantic_query=semantic,
-    )
-
-    result = use_case.execute(
-        RunHybridQueryRequest(
-            repository_id="repo-123",
-            query_text="velociraptor nebula quasar",
-            max_results=5,
-        ),
-    )
-
-    assert result.diagnostics.degraded is False
-    assert result.diagnostics.lexical.match_count == 0
-    assert result.results[0].explanation == (
-        "Fused hybrid rank from semantic evidence only; lexical retrieval returned no "
-        "match for this chunk."
-    )
-
-
-def test_run_hybrid_query_raises_when_component_baseline_is_missing() -> None:
-    lexical = StubRunLexicalQueryUseCase(
-        error=LexicalBuildBaselineMissingError(
-            "No lexical baseline exists yet for this repository; run "
-            "`codeman index build-lexical <snapshot-id>` first.",
+            max_results=2,
         )
     )
-    semantic = StubRunSemanticQueryUseCase(result=build_semantic_result())
-    use_case = RunHybridQueryUseCase(
+
+    assert lexical.seen_requests[0].max_results == use_case.candidate_window_size
+    assert semantic.seen_requests[0].max_results == use_case.candidate_window_size
+    assert [entry.retrieval_mode for entry in result.entries] == [
+        "lexical",
+        "semantic",
+        "hybrid",
+    ]
+    assert result.alignment[0].chunk_id == "chunk-shared"
+    assert result.alignment[0].lexical_rank == 1
+    assert result.alignment[0].semantic_rank == 1
+    assert result.alignment[0].hybrid_rank == 1
+    assert result.alignment[1].chunk_id == "chunk-lexical"
+    assert result.alignment[1].hybrid_rank == 2
+    assert result.alignment[2].chunk_id == "chunk-semantic"
+    assert result.alignment[2].hybrid_rank == 3
+    assert result.diagnostics.alignment_count == 3
+    assert result.diagnostics.overlap_count == 3
+
+
+def test_compare_retrieval_modes_maps_missing_component_baseline() -> None:
+    lexical = StubRunLexicalQueryUseCase(result=build_lexical_result())
+    semantic = StubRunSemanticQueryUseCase(
+        error=SemanticBuildBaselineMissingError(
+            "No semantic baseline exists yet for this repository and current configuration; "
+            "run `codeman index build-semantic <snapshot-id>` first.",
+        )
+    )
+    use_case = CompareRetrievalModesUseCase(
         run_lexical_query=lexical,
         run_semantic_query=semantic,
     )
 
-    with pytest.raises(HybridComponentBaselineMissingError) as exc_info:
+    with pytest.raises(CompareRetrievalModesBaselineMissingError) as exc_info:
         use_case.execute(
-            RunHybridQueryRequest(
+            CompareRetrievalModesRequest(
                 repository_id="repo-123",
                 query_text="controller home route",
-            ),
+            )
         )
 
     assert exc_info.value.details == {
-        "component": "lexical",
-        "component_error_code": "lexical_build_baseline_missing",
+        "mode": "semantic",
+        "mode_error_code": "semantic_build_baseline_missing",
     }
 
 
-def test_run_hybrid_query_preserves_component_error_details() -> None:
+def test_compare_retrieval_modes_maps_unavailable_component_details() -> None:
     lexical = StubRunLexicalQueryUseCase(result=build_lexical_result())
     semantic = StubRunSemanticQueryUseCase(
         error=SemanticQueryProviderUnavailableError(
@@ -275,30 +247,30 @@ def test_run_hybrid_query_preserves_component_error_details() -> None:
             },
         )
     )
-    use_case = RunHybridQueryUseCase(
+    use_case = CompareRetrievalModesUseCase(
         run_lexical_query=lexical,
         run_semantic_query=semantic,
     )
 
-    with pytest.raises(HybridComponentUnavailableError) as exc_info:
+    with pytest.raises(CompareRetrievalModesModeUnavailableError) as exc_info:
         use_case.execute(
-            RunHybridQueryRequest(
+            CompareRetrievalModesRequest(
                 repository_id="repo-123",
                 query_text="controller home route",
-            ),
+            )
         )
 
     assert exc_info.value.details == {
-        "component": "semantic",
-        "component_error_code": "embedding_provider_unavailable",
-        "component_details": {
+        "mode": "semantic",
+        "mode_error_code": "embedding_provider_unavailable",
+        "mode_details": {
             "provider_id": "local-hash",
             "local_model_path": "/tmp/local-model",
         },
     }
 
 
-def test_run_hybrid_query_raises_when_snapshots_do_not_match() -> None:
+def test_compare_retrieval_modes_raises_when_mode_snapshots_do_not_match() -> None:
     lexical = StubRunLexicalQueryUseCase(result=build_lexical_result())
     semantic = StubRunSemanticQueryUseCase(
         result=build_semantic_result(
@@ -306,77 +278,24 @@ def test_run_hybrid_query_raises_when_snapshots_do_not_match() -> None:
             revision_identity="revision-other",
         )
     )
-    use_case = RunHybridQueryUseCase(
+    use_case = CompareRetrievalModesUseCase(
         run_lexical_query=lexical,
         run_semantic_query=semantic,
     )
 
-    with pytest.raises(HybridSnapshotMismatchError):
+    with pytest.raises(CompareRetrievalModesSnapshotMismatchError) as exc_info:
         use_case.execute(
-            RunHybridQueryRequest(
+            CompareRetrievalModesRequest(
                 repository_id="repo-123",
                 query_text="controller home route",
-            ),
+            )
         )
 
-
-def test_run_hybrid_query_marks_total_match_count_as_lower_bound_when_component_truncated() -> None:
-    lexical_result = build_lexical_result().model_copy(
-        update={
-            "diagnostics": RetrievalQueryDiagnostics(
-                match_count=2,
-                query_latency_ms=4,
-                total_match_count=120,
-                truncated=True,
-            ),
-        }
-    )
-    semantic_result = build_semantic_result().model_copy(
-        update={
-            "diagnostics": RetrievalQueryDiagnostics(
-                match_count=2,
-                query_latency_ms=7,
-                total_match_count=80,
-                truncated=False,
-            ),
-        }
-    )
-    lexical = StubRunLexicalQueryUseCase(result=lexical_result)
-    semantic = StubRunSemanticQueryUseCase(result=semantic_result)
-    use_case = RunHybridQueryUseCase(
-        run_lexical_query=lexical,
-        run_semantic_query=semantic,
-    )
-
-    result = use_case.execute(
-        RunHybridQueryRequest(
-            repository_id="repo-123",
-            query_text="controller home route",
-        ),
-    )
-
-    assert result.diagnostics.truncated is True
-    assert result.diagnostics.total_match_count == 120
-    assert result.diagnostics.total_match_count_is_lower_bound is True
-
-
-def test_compose_hybrid_result_from_components_reuses_existing_component_packages() -> None:
-    lexical_result = build_lexical_result()
-    semantic_result = build_semantic_result()
-
-    composition = compose_hybrid_result_from_components(
-        lexical_result=lexical_result,
-        semantic_result=semantic_result,
-        query_text="controller home route",
-        max_results=2,
-        rank_window_size=DEFAULT_HYBRID_CANDIDATE_WINDOW,
-        rank_constant=60,
-        latency_ms=11,
-    )
-
-    assert composition.result.retrieval_mode == "hybrid"
-    assert composition.result.build.lexical_build.build_id == "lexical-build-123"
-    assert composition.result.build.semantic_build.build_id == "semantic-build-123"
-    assert composition.result.results[0].chunk_id == "chunk-shared"
-    assert composition.result.results[1].chunk_id == "chunk-lexical"
-    assert len(composition.fused_results) == 3
+    assert exc_info.value.details == {
+        "lexical_snapshot_id": "snapshot-123",
+        "semantic_snapshot_id": "snapshot-999",
+        "lexical_revision_identity": "revision-abc",
+        "semantic_revision_identity": "revision-other",
+        "lexical_build_id": "lexical-build-123",
+        "semantic_build_id": "semantic-build-123",
+    }

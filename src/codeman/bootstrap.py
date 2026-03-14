@@ -11,6 +11,7 @@ from codeman.application.indexing.build_lexical_index import BuildLexicalIndexUs
 from codeman.application.indexing.build_semantic_index import BuildSemanticIndexUseCase
 from codeman.application.indexing.build_vector_index import BuildVectorIndexStage
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesUseCase
+from codeman.application.query.compare_retrieval_modes import CompareRetrievalModesUseCase
 from codeman.application.query.format_results import RetrievalResultFormatter
 from codeman.application.query.run_hybrid_query import RunHybridQueryUseCase
 from codeman.application.query.run_lexical_query import RunLexicalQueryUseCase
@@ -89,6 +90,7 @@ class BootstrapContainer:
     run_lexical_query: RunLexicalQueryUseCase
     run_semantic_query: RunSemanticQueryUseCase
     run_hybrid_query: RunHybridQueryUseCase
+    compare_retrieval_modes: CompareRetrievalModesUseCase
     reindex_repository: ReindexRepositoryUseCase
 
 
@@ -223,6 +225,11 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         run_semantic_query=run_semantic_query,
         formatter=RetrievalResultFormatter(),
     )
+    compare_retrieval_modes = CompareRetrievalModesUseCase(
+        run_lexical_query=run_lexical_query,
+        run_semantic_query=run_semantic_query,
+        formatter=RetrievalResultFormatter(),
+    )
     reindex_repository = ReindexRepositoryUseCase(
         runtime_paths=runtime_paths,
         repository_store=metadata_store,
@@ -257,5 +264,6 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         run_lexical_query=run_lexical_query,
         run_semantic_query=run_semantic_query,
         run_hybrid_query=run_hybrid_query,
+        compare_retrieval_modes=compare_retrieval_modes,
         reindex_repository=reindex_repository,
     )
