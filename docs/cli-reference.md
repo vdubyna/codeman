@@ -41,9 +41,61 @@ uv run codeman index build-semantic <snapshot-id> --output-format json
 ```
 
 `index build-semantic` is local-first and requires an explicit local embedding configuration.
-Set `CODEMAN_SEMANTIC_PROVIDER_ID=local-hash` and `CODEMAN_SEMANTIC_LOCAL_MODEL_PATH=/path/to/local/model`
-before running the command. `codeman` will not auto-enable OpenAI or another external provider when
-semantic indexing is requested without explicit opt-in.
+Keep semantic workflow selection under `semantic_indexing` and provider-owned settings under
+`embedding_providers.local_hash`.
+
+Project defaults may include non-secret provider metadata:
+
+```toml
+[tool.codeman.semantic_indexing]
+provider_id = "local-hash"
+vector_engine = "sqlite-exact"
+vector_dimension = 16
+fingerprint_salt = ""
+
+[tool.codeman.embedding_providers.local_hash]
+model_id = "hash-embedding"
+model_version = "1"
+```
+
+Protected local config may include machine-local provider settings:
+
+```toml
+[embedding_providers.local_hash]
+local_model_path = "/path/to/local/model"
+api_key = "local-only-secret"
+```
+
+Legacy file-based compatibility remains supported for the current `local-hash` workflow. Existing
+project or local TOML files may still use `semantic_indexing.model_id`,
+`semantic_indexing.model_version`, and `semantic_indexing.local_model_path`; `codeman` maps those
+values into `embedding_providers.local_hash` during config resolution. The separated
+`embedding_providers.*` tables are still the canonical shape for new config.
+
+Environment overrides keep the same deterministic precedence as the rest of the config system.
+Current supported inputs are:
+
+- `CODEMAN_SEMANTIC_PROVIDER_ID`
+- `CODEMAN_SEMANTIC_VECTOR_ENGINE`
+- `CODEMAN_SEMANTIC_VECTOR_DIMENSION`
+- `CODEMAN_SEMANTIC_FINGERPRINT_SALT`
+- `CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_MODEL_ID`
+- `CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_MODEL_VERSION`
+- `CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_LOCAL_MODEL_PATH`
+- `CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_API_KEY`
+
+Compatibility aliases remain supported for the current `local-hash` workflow:
+
+- `CODEMAN_SEMANTIC_MODEL_ID`
+- `CODEMAN_SEMANTIC_MODEL_VERSION`
+- `CODEMAN_SEMANTIC_LOCAL_MODEL_PATH`
+
+If an environment variable is explicitly present with an empty value for a provider-owned field,
+that empty value clears the lower-precedence local/provider setting for the current invocation.
+
+Secret-bearing provider values such as `api_key` are rejected in committed project defaults.
+They must come from a protected local config file or environment variables. `config show` omits
+raw secret values and reports only whether those fields are configured.
 
 Text output includes:
 - Repository, snapshot, and semantic build identifiers.
@@ -169,14 +221,16 @@ uv run codeman --config-path /path/to/config.toml --workspace-root /tmp/workspac
 Text output includes:
 - Source precedence and the resolved project/defaults and local-config paths.
 - Effective runtime values such as workspace root, runtime root directory, and metadata database name.
-- Effective indexing and semantic-indexing settings, without introducing any extra workflow side effects.
+- Effective indexing and semantic-indexing settings, plus secret-safe provider-owned settings under `embedding_providers`.
+- Secret-bearing provider fields are omitted from text and JSON output; instead, `config show` reports whether a field such as `api_key` is configured.
 
 JSON output keeps the standard success envelope on `stdout` and returns:
 - `project_name`
 - `default_output_format`
 - `runtime`
 - `indexing`
-- `semantic_indexing`
+- `semantic_indexing` including additive compatibility fields `model_id`, `model_version`, and `local_model_path`
+- `embedding_providers`
 - `metadata`
 
 Invalid or conflicting configuration fails before the underlying workflow starts. That includes
@@ -202,6 +256,10 @@ Text output includes:
 - Retrieval mode plus repository, snapshot, build, query, latency, provider, model, vector engine, and semantic configuration fingerprint metadata.
 - One ranked block per result with stable `chunk_id`, relative path, span metadata, language/strategy, score, compact preview text, and a truthful semantic explanation.
 - The same top-20 cap and truncated-count reporting used by `query lexical`.
+
+`query semantic` uses the same separated provider configuration layout and environment aliases as
+`index build-semantic`. The currently supported provider remains `local-hash`; `codeman` will not
+auto-enable an external provider from config alone.
 
 JSON output keeps the standard success envelope on `stdout` and exposes the same retrieval package fields, with
 semantic build metadata under `data.build`:

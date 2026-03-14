@@ -27,6 +27,7 @@ from codeman.application.ports.semantic_index_build_store_port import (
     SemanticIndexBuildStorePort,
 )
 from codeman.application.ports.snapshot_port import SnapshotMetadataStorePort
+from codeman.config.embedding_providers import EmbeddingProvidersConfig
 from codeman.config.semantic_indexing import (
     SemanticIndexingConfig,
     build_semantic_indexing_fingerprint,
@@ -101,6 +102,7 @@ class BuildSemanticIndexUseCase:
     vector_index_stage: BuildVectorIndexStage
     semantic_index_build_store: SemanticIndexBuildStorePort
     semantic_indexing_config: SemanticIndexingConfig
+    embedding_providers_config: EmbeddingProvidersConfig
 
     def execute(self, request: BuildSemanticIndexRequest) -> BuildSemanticIndexResult:
         """Build and record semantic artifacts for the requested snapshot."""
@@ -134,6 +136,7 @@ class BuildSemanticIndexUseCase:
         try:
             semantic_config_fingerprint = build_semantic_indexing_fingerprint(
                 self.semantic_indexing_config,
+                self.embedding_providers_config,
             )
         except ValueError as exc:
             raise InvalidSemanticConfigurationError(

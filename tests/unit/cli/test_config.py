@@ -23,6 +23,7 @@ def test_config_show_renders_text_output(tmp_path: Path) -> None:
             "CODEMAN_SEMANTIC_PROVIDER_ID": "local-hash",
             "CODEMAN_SEMANTIC_LOCAL_MODEL_PATH": str(local_model_path),
             "CODEMAN_SEMANTIC_MODEL_VERSION": "2026-03-14",
+            "CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_API_KEY": "super-secret",
         },
     )
 
@@ -34,7 +35,13 @@ def test_config_show_renders_text_output(tmp_path: Path) -> None:
     assert f"Workspace root: {workspace.resolve()}" in result.stdout
     assert "Local config present: no" in result.stdout
     assert "Semantic provider id: local-hash" in result.stdout
-    assert f"Semantic local model path: {local_model_path.resolve()}" in result.stdout
+    assert "Embedding provider local-hash model version: 2026-03-14" in result.stdout
+    assert (
+        f"Embedding provider local-hash local model path: {local_model_path.resolve()}"
+        in result.stdout
+    )
+    assert "Embedding provider local-hash api key configured: yes" in result.stdout
+    assert "super-secret" not in result.stdout
 
 
 def test_config_show_renders_json_output(tmp_path: Path) -> None:
@@ -59,6 +66,29 @@ def test_config_show_renders_json_output(tmp_path: Path) -> None:
         "cli_overrides",
         "environment",
     ]
+    assert payload["data"]["semantic_indexing"]["model_id"] == "hash-embedding"
+    assert payload["data"]["semantic_indexing"]["model_version"] == "1"
+    assert payload["data"]["semantic_indexing"]["local_model_path"] is None
+    assert payload["data"]["embedding_providers"]["local_hash"]["model_id"] == "hash-embedding"
+    assert payload["data"]["embedding_providers"]["local_hash"]["api_key_configured"] is False
+
+
+def test_config_show_redacts_provider_secrets_in_json_output(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    result = runner.invoke(
+        app,
+        ["--workspace-root", str(workspace), "config", "show", "--output-format", "json"],
+        env={"CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_API_KEY": "super-secret"},
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 0, result.stdout
+    assert payload["data"]["embedding_providers"]["local_hash"]["api_key_configured"] is True
+    assert "api_key" not in payload["data"]["embedding_providers"]["local_hash"]
+    assert "super-secret" not in result.stdout
 
 
 def test_config_show_returns_json_failure_for_invalid_configuration() -> None:

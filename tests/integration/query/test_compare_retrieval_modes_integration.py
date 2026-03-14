@@ -148,7 +148,10 @@ def test_compare_retrieval_modes_requires_matching_component_snapshots_after_rei
         repository_path=repository_path,
         monkeypatch=monkeypatch,
     )
-    semantic_fingerprint = build_semantic_indexing_fingerprint(container.config.semantic_indexing)
+    semantic_fingerprint = build_semantic_indexing_fingerprint(
+        container.config.semantic_indexing,
+        container.config.embedding_providers,
+    )
     initial_semantic_build = container.semantic_index_build_store.get_latest_build_for_snapshot(
         initial_snapshot_id,
         semantic_fingerprint,

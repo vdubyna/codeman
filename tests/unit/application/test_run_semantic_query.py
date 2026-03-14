@@ -18,6 +18,7 @@ from codeman.application.query.run_semantic_query import (
     SemanticQueryProviderUnavailableError,
     SemanticQueryRepositoryNotRegisteredError,
 )
+from codeman.config.embedding_providers import EmbeddingProviderConfig, EmbeddingProvidersConfig
 from codeman.config.semantic_indexing import (
     SemanticIndexingConfig,
     build_semantic_indexing_fingerprint,
@@ -204,11 +205,18 @@ def build_snapshot_record(repository_id: str, workspace: Path) -> SnapshotRecord
 def build_semantic_config(local_model_path: Path) -> SemanticIndexingConfig:
     return SemanticIndexingConfig(
         provider_id="local-hash",
-        model_id="fixture-local",
-        model_version="2026-03-14",
-        local_model_path=local_model_path,
         vector_engine="sqlite-exact",
         vector_dimension=4,
+    )
+
+
+def build_embedding_providers_config(local_model_path: Path) -> EmbeddingProvidersConfig:
+    return EmbeddingProvidersConfig(
+        local_hash=EmbeddingProviderConfig(
+            model_id="fixture-local",
+            model_version="2026-03-14",
+            local_model_path=local_model_path,
+        ),
     )
 
 
@@ -332,6 +340,7 @@ def build_use_case(
     chunks: list[ChunkRecord],
     payloads: dict[Path, ChunkPayloadDocument],
     semantic_config: SemanticIndexingConfig,
+    embedding_providers_config: EmbeddingProvidersConfig | None = None,
     embedding_provider: FakeEmbeddingProvider | None = None,
     query_engine: FakeSemanticQueryEngine | None = None,
 ) -> RunSemanticQueryUseCase:
@@ -356,6 +365,7 @@ def build_use_case(
         semantic_query=query_engine or FakeSemanticQueryEngine(result=build_query_result()),
         formatter=RetrievalResultFormatter(preview_char_limit=80),
         semantic_indexing_config=semantic_config,
+        embedding_providers_config=embedding_providers_config or EmbeddingProvidersConfig(),
     )
 
 
@@ -371,7 +381,11 @@ def test_run_semantic_query_returns_ranked_matches_with_repository_context(
     repository = build_repository_record(repository_path.resolve())
     snapshot = build_snapshot_record(repository.repository_id, workspace)
     semantic_config = build_semantic_config(local_model_path)
-    fingerprint = build_semantic_indexing_fingerprint(semantic_config)
+    embedding_providers_config = build_embedding_providers_config(local_model_path)
+    fingerprint = build_semantic_indexing_fingerprint(
+        semantic_config,
+        embedding_providers_config,
+    )
     build_store = FakeSemanticIndexBuildStore(
         build=build_semantic_build_record(
             workspace=workspace,
@@ -388,6 +402,7 @@ def test_run_semantic_query_returns_ranked_matches_with_repository_context(
         chunks=chunks,
         payloads=build_payloads(chunks),
         semantic_config=semantic_config,
+        embedding_providers_config=embedding_providers_config,
     )
 
     result = use_case.execute(
@@ -429,6 +444,7 @@ def test_run_semantic_query_raises_when_repository_is_unknown(tmp_path: Path) ->
         chunks=[],
         payloads={},
         semantic_config=semantic_config,
+        embedding_providers_config=build_embedding_providers_config(local_model_path),
     )
 
     with pytest.raises(SemanticQueryRepositoryNotRegisteredError):
@@ -459,6 +475,7 @@ def test_run_semantic_query_raises_when_current_semantic_build_is_missing(
         chunks=[],
         payloads={},
         semantic_config=semantic_config,
+        embedding_providers_config=build_embedding_providers_config(local_model_path),
     )
 
     with pytest.raises(SemanticBuildBaselineMissingError):
@@ -482,7 +499,11 @@ def test_run_semantic_query_raises_when_semantic_artifact_is_missing(
     repository = build_repository_record(repository_path.resolve())
     snapshot = build_snapshot_record(repository.repository_id, workspace)
     semantic_config = build_semantic_config(local_model_path)
-    fingerprint = build_semantic_indexing_fingerprint(semantic_config)
+    embedding_providers_config = build_embedding_providers_config(local_model_path)
+    fingerprint = build_semantic_indexing_fingerprint(
+        semantic_config,
+        embedding_providers_config,
+    )
     missing_build = build_semantic_build_record(
         workspace=workspace,
         repository_id=repository.repository_id,
@@ -496,6 +517,7 @@ def test_run_semantic_query_raises_when_semantic_artifact_is_missing(
         chunks=build_chunk_records(workspace),
         payloads={},
         semantic_config=semantic_config,
+        embedding_providers_config=embedding_providers_config,
     )
 
     with pytest.raises(SemanticArtifactMissingError):
@@ -519,7 +541,11 @@ def test_run_semantic_query_raises_when_ranked_chunk_metadata_is_missing(
     repository = build_repository_record(repository_path.resolve())
     snapshot = build_snapshot_record(repository.repository_id, workspace)
     semantic_config = build_semantic_config(local_model_path)
-    fingerprint = build_semantic_indexing_fingerprint(semantic_config)
+    embedding_providers_config = build_embedding_providers_config(local_model_path)
+    fingerprint = build_semantic_indexing_fingerprint(
+        semantic_config,
+        embedding_providers_config,
+    )
     build_store = FakeSemanticIndexBuildStore(
         build=build_semantic_build_record(
             workspace=workspace,
@@ -536,6 +562,7 @@ def test_run_semantic_query_raises_when_ranked_chunk_metadata_is_missing(
         chunks=chunks,
         payloads=build_payloads(chunks),
         semantic_config=semantic_config,
+        embedding_providers_config=embedding_providers_config,
     )
 
     with pytest.raises(SemanticQueryChunkMetadataMissingError):
@@ -559,7 +586,11 @@ def test_run_semantic_query_raises_when_chunk_payload_is_missing(
     repository = build_repository_record(repository_path.resolve())
     snapshot = build_snapshot_record(repository.repository_id, workspace)
     semantic_config = build_semantic_config(local_model_path)
-    fingerprint = build_semantic_indexing_fingerprint(semantic_config)
+    embedding_providers_config = build_embedding_providers_config(local_model_path)
+    fingerprint = build_semantic_indexing_fingerprint(
+        semantic_config,
+        embedding_providers_config,
+    )
     build_store = FakeSemanticIndexBuildStore(
         build=build_semantic_build_record(
             workspace=workspace,
@@ -578,6 +609,7 @@ def test_run_semantic_query_raises_when_chunk_payload_is_missing(
         chunks=chunks,
         payloads=payloads,
         semantic_config=semantic_config,
+        embedding_providers_config=embedding_providers_config,
     )
 
     with pytest.raises(SemanticQueryChunkPayloadMissingError):
@@ -600,13 +632,20 @@ def test_run_semantic_query_raises_when_local_provider_is_unavailable(
     snapshot = build_snapshot_record(repository.repository_id, workspace)
     semantic_config = SemanticIndexingConfig(
         provider_id="local-hash",
-        model_id="fixture-local",
-        model_version="2026-03-14",
-        local_model_path=tmp_path / "missing-local-model",
         vector_engine="sqlite-exact",
         vector_dimension=4,
     )
-    fingerprint = build_semantic_indexing_fingerprint(semantic_config)
+    embedding_providers_config = EmbeddingProvidersConfig(
+        local_hash=EmbeddingProviderConfig(
+            model_id="fixture-local",
+            model_version="2026-03-14",
+            local_model_path=tmp_path / "missing-local-model",
+        ),
+    )
+    fingerprint = build_semantic_indexing_fingerprint(
+        semantic_config,
+        embedding_providers_config,
+    )
     use_case = build_use_case(
         workspace=workspace,
         repository=repository,
@@ -621,6 +660,7 @@ def test_run_semantic_query_raises_when_local_provider_is_unavailable(
         chunks=[],
         payloads={},
         semantic_config=semantic_config,
+        embedding_providers_config=embedding_providers_config,
     )
 
     with pytest.raises(SemanticQueryProviderUnavailableError):
@@ -644,7 +684,11 @@ def test_run_semantic_query_raises_when_query_embedding_lineage_does_not_match_b
     repository = build_repository_record(repository_path.resolve())
     snapshot = build_snapshot_record(repository.repository_id, workspace)
     semantic_config = build_semantic_config(local_model_path)
-    fingerprint = build_semantic_indexing_fingerprint(semantic_config)
+    embedding_providers_config = build_embedding_providers_config(local_model_path)
+    fingerprint = build_semantic_indexing_fingerprint(
+        semantic_config,
+        embedding_providers_config,
+    )
     build_store = FakeSemanticIndexBuildStore(
         build=build_semantic_build_record(
             workspace=workspace,
@@ -661,6 +705,7 @@ def test_run_semantic_query_raises_when_query_embedding_lineage_does_not_match_b
         chunks=chunks,
         payloads=build_payloads(chunks),
         semantic_config=semantic_config,
+        embedding_providers_config=embedding_providers_config,
         embedding_provider=FakeEmbeddingProvider(
             result=SemanticQueryEmbedding(
                 provider_id="local-hash",
@@ -696,7 +741,11 @@ def test_run_semantic_query_maps_corrupt_vector_artifact_to_stable_error(
     repository = build_repository_record(repository_path.resolve())
     snapshot = build_snapshot_record(repository.repository_id, workspace)
     semantic_config = build_semantic_config(local_model_path)
-    fingerprint = build_semantic_indexing_fingerprint(semantic_config)
+    embedding_providers_config = build_embedding_providers_config(local_model_path)
+    fingerprint = build_semantic_indexing_fingerprint(
+        semantic_config,
+        embedding_providers_config,
+    )
     build_store = FakeSemanticIndexBuildStore(
         build=build_semantic_build_record(
             workspace=workspace,
@@ -713,6 +762,7 @@ def test_run_semantic_query_maps_corrupt_vector_artifact_to_stable_error(
         chunks=chunks,
         payloads=build_payloads(chunks),
         semantic_config=semantic_config,
+        embedding_providers_config=embedding_providers_config,
         query_engine=FakeSemanticQueryEngine(
             error=SemanticVectorArtifactCorruptError("row count does not match recorded metadata"),
         ),

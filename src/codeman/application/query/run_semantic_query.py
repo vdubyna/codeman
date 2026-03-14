@@ -27,6 +27,7 @@ from codeman.application.query.format_results import (
     ResolvedSemanticMatch,
     RetrievalResultFormatter,
 )
+from codeman.config.embedding_providers import EmbeddingProvidersConfig
 from codeman.config.semantic_indexing import (
     SemanticIndexingConfig,
     build_semantic_indexing_fingerprint,
@@ -171,6 +172,7 @@ class RunSemanticQueryUseCase:
     semantic_query: SemanticQueryPort
     formatter: RetrievalResultFormatter
     semantic_indexing_config: SemanticIndexingConfig
+    embedding_providers_config: EmbeddingProvidersConfig
 
     def execute(self, request: RunSemanticQueryRequest) -> RunSemanticQueryResult:
         """Run a semantic query against the current repository build."""
@@ -190,6 +192,7 @@ class RunSemanticQueryUseCase:
         try:
             semantic_config_fingerprint = build_semantic_indexing_fingerprint(
                 self.semantic_indexing_config,
+                self.embedding_providers_config,
             )
             vector_dimension = self.semantic_indexing_config.resolved_vector_dimension()
         except ValueError as exc:
@@ -218,7 +221,10 @@ class RunSemanticQueryUseCase:
             )
 
         try:
-            provider = resolve_local_embedding_provider(self.semantic_indexing_config)
+            provider = resolve_local_embedding_provider(
+                self.semantic_indexing_config,
+                self.embedding_providers_config,
+            )
         except EmbeddingProviderUnavailableError as exc:
             raise SemanticQueryProviderUnavailableError(
                 exc.message,

@@ -50,8 +50,10 @@ metadata_database_name = "metadata.sqlite3"
 fingerprint_salt = ""
 
 [tool.codeman.semantic_indexing]
-model_id = "hash-embedding"
-model_version = "1"
 vector_engine = "sqlite-exact"
 vector_dimension = 16
 fingerprint_salt = ""
+
+[tool.codeman.embedding_providers.local_hash]
+model_id = "hash-embedding"
+model_version = "1"

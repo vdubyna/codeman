@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from codeman.config.embedding_providers import EmbeddingProvidersConfig
 
 SEMANTIC_INDEX_FINGERPRINT_SCHEMA_VERSION = "1"
 SEMANTIC_PROVIDER_POLICY_VERSIONS = {
@@ -17,15 +18,13 @@ SEMANTIC_VECTOR_ENGINE_POLICY_VERSIONS = {
     "sqlite-exact": "sqlite-exact-v1",
 }
 
+
 class SemanticIndexingConfig(BaseModel):
     """Minimal semantic-indexing configuration for local-first attribution."""
 
     model_config = ConfigDict(extra="forbid")
 
     provider_id: str | None = Field(default=None)
-    model_id: str = Field(default="hash-embedding")
-    model_version: str = Field(default="1")
-    local_model_path: Path | None = Field(default=None)
     vector_engine: str = Field(default="sqlite-exact")
     vector_dimension: int = Field(default=16)
     fingerprint_salt: str = Field(default="")
@@ -36,13 +35,6 @@ class SemanticIndexingConfig(BaseModel):
         if value in (None, ""):
             return None
         return value
-
-    @field_validator("local_model_path", mode="before")
-    @classmethod
-    def _resolve_local_model_path(cls, value: Path | str | None) -> Path | None:
-        if value in (None, ""):
-            return None
-        return Path(value).expanduser().resolve()
 
     @field_validator("vector_dimension", mode="before")
     @classmethod
@@ -64,10 +56,14 @@ class SemanticIndexingConfig(BaseModel):
         return self.vector_dimension
 
 
-def build_semantic_indexing_descriptor(config: SemanticIndexingConfig) -> dict[str, Any]:
+def build_semantic_indexing_descriptor(
+    config: SemanticIndexingConfig,
+    embedding_providers: EmbeddingProvidersConfig,
+) -> dict[str, Any]:
     """Return the normalized fingerprint payload for the current semantic policy."""
 
     vector_dimension = config.resolved_vector_dimension()
+    selected_provider = embedding_providers.get_provider_config(config.provider_id)
     return {
         "schema_version": SEMANTIC_INDEX_FINGERPRINT_SCHEMA_VERSION,
         "provider": {
@@ -75,10 +71,14 @@ def build_semantic_indexing_descriptor(config: SemanticIndexingConfig) -> dict[s
             "provider_policy_version": SEMANTIC_PROVIDER_POLICY_VERSIONS.get(
                 config.provider_id,
             ),
-            "model_id": config.model_id,
-            "model_version": config.model_version,
+            "model_id": selected_provider.model_id if selected_provider is not None else None,
+            "model_version": (
+                selected_provider.model_version if selected_provider is not None else None
+            ),
             "local_model_path": (
-                str(config.local_model_path) if config.local_model_path is not None else None
+                str(selected_provider.local_model_path)
+                if selected_provider is not None and selected_provider.local_model_path is not None
+                else None
             ),
         },
         "vector_index": {
@@ -94,10 +94,13 @@ def build_semantic_indexing_descriptor(config: SemanticIndexingConfig) -> dict[s
     }
 
 
-def build_semantic_indexing_fingerprint(config: SemanticIndexingConfig) -> str:
+def build_semantic_indexing_fingerprint(
+    config: SemanticIndexingConfig,
+    embedding_providers: EmbeddingProvidersConfig,
+) -> str:
     """Build a deterministic fingerprint for the current semantic-indexing policy."""
 
-    descriptor = build_semantic_indexing_descriptor(config)
+    descriptor = build_semantic_indexing_descriptor(config, embedding_providers)
     encoded = json.dumps(
         descriptor,
         separators=(",", ":"),

@@ -248,3 +248,42 @@ def test_uv_run_index_build_semantic_returns_stable_failure_for_invalid_vector_d
     assert payload["error"]["code"] == "configuration_invalid"
     assert "CODEMAN_SEMANTIC_VECTOR_DIMENSION" in payload["error"]["message"]
     assert "Traceback" not in build_semantic_result.stderr
+
+
+def test_uv_run_index_build_semantic_does_not_leak_provider_secrets(
+    tmp_path: Path,
+) -> None:
+    project_root, env, snapshot_id = prepare_chunked_repository(
+        tmp_path=tmp_path,
+        scenario_name="secret-redaction",
+        configure_semantic=True,
+    )
+    env["CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_API_KEY"] = "super-secret"
+
+    build_semantic_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "index",
+            "build-semantic",
+            snapshot_id,
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+
+    payload = json.loads(build_semantic_result.stdout)
+    embedding_documents_path = Path(payload["data"]["diagnostics"]["embedding_documents_path"])
+    metadata_database_path = Path(env["CODEMAN_WORKSPACE_ROOT"]) / ".codeman" / "metadata.sqlite3"
+
+    assert build_semantic_result.returncode == 0, build_semantic_result.stderr
+    assert "super-secret" not in build_semantic_result.stdout
+    assert "super-secret" not in build_semantic_result.stderr
+    assert "super-secret" not in embedding_documents_path.read_text(encoding="utf-8")
+    assert b"super-secret" not in metadata_database_path.read_bytes()

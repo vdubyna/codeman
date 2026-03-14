@@ -60,12 +60,14 @@ fingerprint_salt = "project-salt"
 
 [tool.codeman.semantic_indexing]
 provider_id = "local-hash"
-model_id = "project-model"
-model_version = "1"
-local_model_path = "/tmp/project-model"
 vector_engine = "sqlite-exact"
 vector_dimension = 8
 fingerprint_salt = "project-semantic-salt"
+
+[tool.codeman.embedding_providers.local_hash]
+model_id = "project-model"
+model_version = "1"
+local_model_path = "/tmp/project-model"
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -79,6 +81,9 @@ root_dir_name = ".local-root"
 
 [indexing]
 fingerprint_salt = "local-salt"
+
+[embedding_providers.local_hash]
+api_key = "local-secret"
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -95,6 +100,7 @@ fingerprint_salt = "local-salt"
             "CODEMAN_RUNTIME_ROOT_DIR": ".env-root",
             "CODEMAN_METADATA_DATABASE_NAME": "env.sqlite3",
             "CODEMAN_INDEXING_FINGERPRINT_SALT": "env-salt",
+            "CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_MODEL_ID": "env-model",
             "CODEMAN_SEMANTIC_MODEL_VERSION": "2026-03-14",
         },
     )
@@ -106,8 +112,15 @@ fingerprint_salt = "local-salt"
     assert config.runtime.metadata_database_name == "env.sqlite3"
     assert config.indexing.fingerprint_salt == "env-salt"
     assert config.semantic_indexing.provider_id == "local-hash"
-    assert config.semantic_indexing.model_id == "project-model"
-    assert config.semantic_indexing.model_version == "2026-03-14"
+    assert config.semantic_indexing.vector_engine == "sqlite-exact"
+    assert config.embedding_providers.local_hash.model_id == "env-model"
+    assert config.embedding_providers.local_hash.model_version == "2026-03-14"
+    assert (
+        config.embedding_providers.local_hash.local_model_path
+        == Path("/tmp/project-model").resolve()
+    )
+    assert config.embedding_providers.local_hash.api_key is not None
+    assert config.embedding_providers.local_hash.api_key.get_secret_value() == "local-secret"
 
 
 def test_load_app_config_keeps_missing_optional_local_config_non_fatal(tmp_path: Path) -> None:
@@ -205,3 +218,111 @@ project_name = "project-default"
         )
 
     assert "CODEMAN_SEMANTIC_VECTOR_DIMENSION" in str(exc_info.value)
+
+
+def test_load_app_config_rejects_secret_values_in_project_defaults(tmp_path: Path) -> None:
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_text(
+        """
+[tool.codeman.embedding_providers.local_hash]
+api_key = "committed-secret"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationResolutionError) as exc_info:
+        load_app_config(
+            pyproject_path=pyproject_path,
+            environ={},
+        )
+
+    assert "project defaults" in str(exc_info.value)
+    assert "committed-secret" not in str(exc_info.value)
+
+
+def test_load_app_config_accepts_legacy_semantic_provider_fields_in_file_sources(
+    tmp_path: Path,
+) -> None:
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_text(
+        """
+[tool.codeman.semantic_indexing]
+provider_id = "local-hash"
+model_id = "project-legacy-model"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    local_config_path = tmp_path / "local-config.toml"
+    local_config_path.write_text(
+        """
+[semantic_indexing]
+model_version = "local-legacy-version"
+local_model_path = "/tmp/local-legacy-model"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    config = load_app_config(
+        pyproject_path=pyproject_path,
+        config_path=local_config_path,
+        allow_missing_local_config=False,
+        environ={},
+    )
+
+    assert config.semantic_indexing.provider_id == "local-hash"
+    assert config.embedding_providers.local_hash.model_id == "project-legacy-model"
+    assert config.embedding_providers.local_hash.model_version == "local-legacy-version"
+    assert (
+        config.embedding_providers.local_hash.local_model_path
+        == Path("/tmp/local-legacy-model").resolve()
+    )
+
+
+def test_load_app_config_empty_provider_env_values_clear_lower_precedence_values(
+    tmp_path: Path,
+) -> None:
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_text(
+        """
+[tool.codeman.semantic_indexing]
+provider_id = "local-hash"
+
+[tool.codeman.embedding_providers.local_hash]
+model_id = "project-model"
+model_version = "project-version"
+local_model_path = "/tmp/project-model"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    local_config_path = tmp_path / "local-config.toml"
+    local_config_path.write_text(
+        """
+[embedding_providers.local_hash]
+api_key = "local-secret"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    config = load_app_config(
+        pyproject_path=pyproject_path,
+        config_path=local_config_path,
+        allow_missing_local_config=False,
+        environ={
+            "CODEMAN_SEMANTIC_PROVIDER_ID": "",
+            "CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_MODEL_ID": "",
+            "CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_MODEL_VERSION": "",
+            "CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_LOCAL_MODEL_PATH": "",
+            "CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_API_KEY": "",
+        },
+    )
+
+    assert config.semantic_indexing.provider_id is None
+    assert config.embedding_providers.local_hash.model_id == "hash-embedding"
+    assert config.embedding_providers.local_hash.model_version == "1"
+    assert config.embedding_providers.local_hash.local_model_path is None
+    assert config.embedding_providers.local_hash.api_key is None

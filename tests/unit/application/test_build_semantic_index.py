@@ -16,6 +16,7 @@ from codeman.application.indexing.semantic_index_errors import (
     SemanticSnapshotNotFoundError,
     VectorIndexBuildError,
 )
+from codeman.config.embedding_providers import EmbeddingProviderConfig, EmbeddingProvidersConfig
 from codeman.config.semantic_indexing import (
     SemanticIndexingConfig,
     build_semantic_indexing_fingerprint,
@@ -193,11 +194,18 @@ def build_chunk_record(
 def build_semantic_config(local_model_path: Path) -> SemanticIndexingConfig:
     return SemanticIndexingConfig(
         provider_id="local-hash",
-        model_id="fixture-local",
-        model_version="2026-03-14",
-        local_model_path=local_model_path,
         vector_engine="sqlite-exact",
         vector_dimension=8,
+    )
+
+
+def build_embedding_providers_config(local_model_path: Path) -> EmbeddingProvidersConfig:
+    return EmbeddingProvidersConfig(
+        local_hash=EmbeddingProviderConfig(
+            model_id="fixture-local",
+            model_version="2026-03-14",
+            local_model_path=local_model_path,
+        ),
     )
 
 
@@ -208,6 +216,7 @@ def build_use_case(
     snapshot: SnapshotRecord | None,
     chunks: list[ChunkRecord],
     semantic_config: SemanticIndexingConfig,
+    embedding_providers_config: EmbeddingProvidersConfig | None,
     artifact_store: FilesystemArtifactStore,
     semantic_build_store: FakeSemanticIndexBuildStore,
     vector_builder: object | None = None,
@@ -223,6 +232,7 @@ def build_use_case(
             artifact_store=artifact_store,
             embedding_provider=DeterministicLocalHashEmbeddingProvider(),
             semantic_indexing_config=semantic_config,
+            embedding_providers_config=embedding_providers_config or EmbeddingProvidersConfig(),
         ),
         vector_index_stage=BuildVectorIndexStage(
             vector_index=vector_builder
@@ -231,6 +241,7 @@ def build_use_case(
         ),
         semantic_index_build_store=semantic_build_store,
         semantic_indexing_config=semantic_config,
+        embedding_providers_config=embedding_providers_config or EmbeddingProvidersConfig(),
     )
 
 
@@ -317,6 +328,7 @@ def test_build_semantic_index_reads_payloads_in_deterministic_order_and_records_
             ),
         ],
         semantic_config=build_semantic_config(local_model_path),
+        embedding_providers_config=build_embedding_providers_config(local_model_path),
         artifact_store=artifact_store,
         semantic_build_store=FakeSemanticIndexBuildStore(),
     )
@@ -335,6 +347,7 @@ def test_build_semantic_index_reads_payloads_in_deterministic_order_and_records_
     assert result.build.vector_engine == "sqlite-exact"
     assert result.build.semantic_config_fingerprint == build_semantic_indexing_fingerprint(
         build_semantic_config(local_model_path),
+        build_embedding_providers_config(local_model_path),
     )
     assert result.diagnostics.document_count == 2
     with sqlite3.connect(result.build.artifact_path) as connection:
@@ -358,6 +371,7 @@ def test_build_semantic_index_requires_registered_snapshot(tmp_path: Path) -> No
         snapshot=None,
         chunks=[],
         semantic_config=build_semantic_config(local_model_path),
+        embedding_providers_config=build_embedding_providers_config(local_model_path),
         artifact_store=artifact_store,
         semantic_build_store=FakeSemanticIndexBuildStore(),
     )
@@ -413,6 +427,7 @@ def test_build_semantic_index_requires_explicit_local_provider_configuration(
             )
         ],
         semantic_config=SemanticIndexingConfig(),
+        embedding_providers_config=EmbeddingProvidersConfig(),
         artifact_store=artifact_store,
         semantic_build_store=FakeSemanticIndexBuildStore(),
     )
@@ -457,6 +472,7 @@ def test_build_semantic_index_fails_when_chunk_payload_artifact_is_missing(
             )
         ],
         semantic_config=build_semantic_config(local_model_path),
+        embedding_providers_config=build_embedding_providers_config(local_model_path),
         artifact_store=artifact_store,
         semantic_build_store=FakeSemanticIndexBuildStore(),
     )
@@ -514,6 +530,7 @@ def test_build_semantic_index_maps_vector_backend_failures_to_stable_error(
             )
         ],
         semantic_config=build_semantic_config(local_model_path),
+        embedding_providers_config=build_embedding_providers_config(local_model_path),
         artifact_store=artifact_store,
         semantic_build_store=FakeSemanticIndexBuildStore(),
         vector_builder=BrokenVectorIndexBuilder(),

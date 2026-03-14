@@ -207,6 +207,7 @@ def bootstrap(
             artifact_store=artifact_store,
             embedding_provider=DeterministicLocalHashEmbeddingProvider(),
             semantic_indexing_config=config.semantic_indexing,
+            embedding_providers_config=config.embedding_providers,
         ),
         vector_index_stage=BuildVectorIndexStage(
             vector_index=SqliteExactVectorIndexBuilder(runtime_paths=runtime_paths),
@@ -214,6 +215,7 @@ def bootstrap(
         ),
         semantic_index_build_store=semantic_index_build_store,
         semantic_indexing_config=config.semantic_indexing,
+        embedding_providers_config=config.embedding_providers,
     )
     run_lexical_query = RunLexicalQueryUseCase(
         runtime_paths=runtime_paths,
@@ -236,6 +238,7 @@ def bootstrap(
         semantic_query=SqliteExactVectorQueryEngine(),
         formatter=RetrievalResultFormatter(),
         semantic_indexing_config=config.semantic_indexing,
+        embedding_providers_config=config.embedding_providers,
     )
     run_hybrid_query = RunHybridQueryUseCase(
         run_lexical_query=run_lexical_query,

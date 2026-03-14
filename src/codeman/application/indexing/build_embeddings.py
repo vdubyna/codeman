@@ -12,6 +12,10 @@ from codeman.application.indexing.semantic_index_errors import (
 )
 from codeman.application.ports.artifact_store_port import ArtifactStorePort
 from codeman.application.ports.embedding_provider_port import EmbeddingProviderPort
+from codeman.config.embedding_providers import (
+    LOCAL_HASH_PROVIDER_ID,
+    EmbeddingProvidersConfig,
+)
 from codeman.config.semantic_indexing import SemanticIndexingConfig
 from codeman.contracts.retrieval import (
     EmbeddingProviderDescriptor,
@@ -27,11 +31,10 @@ __all__ = [
     "resolve_local_embedding_provider",
 ]
 
-LOCAL_HASH_PROVIDER_ID = "local-hash"
-
 
 def resolve_local_embedding_provider(
     semantic_indexing_config: SemanticIndexingConfig,
+    embedding_providers_config: EmbeddingProvidersConfig,
 ) -> EmbeddingProviderDescriptor:
     """Resolve the configured local embedding provider or fail safely."""
 
@@ -44,13 +47,22 @@ def resolve_local_embedding_provider(
             "`codeman index build-semantic`.",
             details={
                 "provider_id": provider_id,
-                "local_model_path": str(semantic_indexing_config.local_model_path)
-                if semantic_indexing_config.local_model_path is not None
-                else None,
             },
         )
 
-    local_model_path = semantic_indexing_config.local_model_path
+    provider_config = embedding_providers_config.get_provider_config(provider_id)
+    if provider_config is None:
+        raise EmbeddingProviderUnavailableError(
+            "Semantic indexing requires a configured provider block for the selected provider. "
+            "Add [embedding_providers.local_hash] settings or set "
+            "CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_* / CODEMAN_SEMANTIC_* environment variables "
+            "before running `codeman index build-semantic`.",
+            details={
+                "provider_id": provider_id,
+            },
+        )
+
+    local_model_path = provider_config.local_model_path
     if local_model_path is None or not local_model_path.exists():
         raise EmbeddingProviderUnavailableError(
             "Semantic indexing requires a readable local model path. "
@@ -64,8 +76,8 @@ def resolve_local_embedding_provider(
 
     return EmbeddingProviderDescriptor(
         provider_id=provider_id,
-        model_id=semantic_indexing_config.model_id,
-        model_version=semantic_indexing_config.model_version,
+        model_id=provider_config.model_id,
+        model_version=provider_config.model_version,
         is_external_provider=False,
         local_model_path=local_model_path,
     )
@@ -87,6 +99,7 @@ class BuildEmbeddingsStage:
     artifact_store: ArtifactStorePort
     embedding_provider: EmbeddingProviderPort
     semantic_indexing_config: SemanticIndexingConfig
+    embedding_providers_config: EmbeddingProvidersConfig
 
     def execute(
         self,
@@ -98,7 +111,10 @@ class BuildEmbeddingsStage:
     ) -> BuildEmbeddingsStageResult:
         """Generate embeddings from persisted source documents only."""
 
-        provider = resolve_local_embedding_provider(self.semantic_indexing_config)
+        provider = resolve_local_embedding_provider(
+            self.semantic_indexing_config,
+            self.embedding_providers_config,
+        )
         try:
             vector_dimension = self.semantic_indexing_config.resolved_vector_dimension()
         except ValueError as exc:

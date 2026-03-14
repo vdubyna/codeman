@@ -62,7 +62,42 @@ model_version = "local-version"
     assert payload["data"]["runtime"]["workspace_root"] == str(workspace.resolve())
     assert payload["data"]["runtime"]["root_dir_name"] == ".env-runtime"
     assert payload["data"]["semantic_indexing"]["model_version"] == "env-version"
+    assert payload["data"]["embedding_providers"]["local_hash"]["model_version"] == "env-version"
     assert payload["data"]["metadata"]["local_config_present"] is True
+
+
+def test_uv_run_config_show_redacts_provider_secrets(tmp_path: Path) -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    env = _base_env(project_root)
+    env["CODEMAN_WORKSPACE_ROOT"] = str(workspace)
+    env["CODEMAN_EMBEDDING_PROVIDER_LOCAL_HASH_API_KEY"] = "super-secret"
+
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "config",
+            "show",
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert result.returncode == 0, result.stderr
+    assert payload["data"]["embedding_providers"]["local_hash"]["api_key_configured"] is True
+    assert "api_key" not in payload["data"]["embedding_providers"]["local_hash"]
+    assert "super-secret" not in result.stdout
+    assert "super-secret" not in result.stderr
 
 
 def test_invalid_configuration_fails_before_repo_workflow_starts(tmp_path: Path) -> None:

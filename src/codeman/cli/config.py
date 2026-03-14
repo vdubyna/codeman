@@ -48,7 +48,7 @@ def show_config(
         bootstrap_state.config_overrides.config_path,
         env=os.environ,
     )
-    payload = container.config.model_dump(mode="json")
+    payload = container.config.to_operator_payload()
     payload["metadata"] = {
         "precedence": list(CONFIG_PRECEDENCE),
         "project_defaults_path": str(project_defaults_path),
@@ -67,9 +67,9 @@ def show_config(
     runtime = payload["runtime"]
     indexing = payload["indexing"]
     semantic = payload["semantic_indexing"]
+    embedding_providers = payload["embedding_providers"]
     lines = [
-        "Configuration source precedence: "
-        + " -> ".join(payload["metadata"]["precedence"]),
+        "Configuration source precedence: " + " -> ".join(payload["metadata"]["precedence"]),
         f"Project defaults file: {payload['metadata']['project_defaults_path']}",
         f"Local config file: {payload['metadata']['local_config_path']}",
         (
@@ -83,11 +83,23 @@ def show_config(
         f"Metadata database name: {runtime['metadata_database_name']}",
         f"Indexing fingerprint salt: {_render_value(indexing['fingerprint_salt'])}",
         f"Semantic provider id: {_render_value(semantic['provider_id'])}",
-        f"Semantic model id: {semantic['model_id']}",
-        f"Semantic model version: {semantic['model_version']}",
-        f"Semantic local model path: {_render_value(semantic['local_model_path'])}",
         f"Semantic vector engine: {semantic['vector_engine']}",
         f"Semantic vector dimension: {semantic['vector_dimension']}",
         f"Semantic fingerprint salt: {_render_value(semantic['fingerprint_salt'])}",
     ]
+    for provider_key, provider_payload in embedding_providers.items():
+        provider_id = provider_key.replace("_", "-")
+        lines.extend(
+            [
+                f"Embedding provider {provider_id} model id: {provider_payload['model_id']}",
+                "Embedding provider "
+                f"{provider_id} model version: {provider_payload['model_version']}",
+                "Embedding provider "
+                f"{provider_id} local model path: "
+                f"{_render_value(provider_payload['local_model_path'])}",
+                "Embedding provider "
+                f"{provider_id} api key configured: "
+                + ("yes" if provider_payload["api_key_configured"] else "no"),
+            ]
+        )
     typer.echo("\n".join(lines))

@@ -171,6 +171,7 @@ def test_build_semantic_index_is_configuration_aware_for_same_snapshot(
     second_container = bootstrap(workspace_root=workspace)
     second_fingerprint = build_semantic_indexing_fingerprint(
         second_container.config.semantic_indexing,
+        second_container.config.embedding_providers,
     )
     stale_lookup = second_container.semantic_index_build_store.get_latest_build_for_snapshot(
         snapshot_id,
