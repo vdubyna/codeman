@@ -19,8 +19,8 @@
 #   - backlog: Story only exists in epic file
 #   - ready-for-dev: Story file created, ready for development
 #   - in-progress: Developer actively working on implementation
-#   - review: Implementation complete, ready for review
-#   - done: Story completed
+#   - review: Implementation complete, ready for review and finalization
+#   - done: Story completed, reviewed, and committed in git
 #
 # Retrospective Status:
 #   - optional: Can be completed but not required
@@ -31,6 +31,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 # - SM typically creates next story ONLY after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then Dev runs code-review (fresh context, ideally different LLM)
+# - Code-review may move a story to 'done' only after the story-scoped files are committed in git
 
 # EXAMPLE STRUCTURE (your actual epics/stories will replace these):
 

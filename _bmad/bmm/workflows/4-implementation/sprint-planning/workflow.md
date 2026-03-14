@@ -159,8 +159,8 @@ development_status:
 #   - backlog: Story only exists in epic file
 #   - ready-for-dev: Story file created in stories folder
 #   - in-progress: Developer actively working on implementation
-#   - review: Ready for code review (via Dev's code-review workflow)
-#   - done: Story completed
+#   - review: Ready for code review and finalization (via Dev's code-review workflow)
+#   - done: Story completed, reviewed, and committed in git
 #
 # Retrospective Status:
 #   - optional: Can be completed but not required
@@ -172,6 +172,7 @@ development_status:
 # - Stories can be worked in parallel if team capacity allows
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Code-review may move a story to 'done' only after the story-scoped files are committed in git
 
 generated: { date }
 last_updated: { date }
@@ -250,8 +251,8 @@ backlog → ready-for-dev → in-progress → review → done
 - **backlog**: Story only exists in epic file
 - **ready-for-dev**: Story file created (e.g., `stories/1-3-plant-naming.md`)
 - **in-progress**: Developer actively working
-- **review**: Ready for code review (via Dev's code-review workflow)
-- **done**: Completed
+- **review**: Ready for code review and finalization
+- **done**: Reviewed and committed in git
 
 **Retrospective Status:**
 
@@ -267,5 +268,5 @@ optional ↔ done
 1. **Epic Activation**: Mark epic as `in-progress` when starting work on its first story
 2. **Sequential Default**: Stories are typically worked in order, but parallel work is supported
 3. **Parallel Work Supported**: Multiple stories can be `in-progress` if team capacity allows
-4. **Review Before Done**: Stories should pass through `review` before `done`
+4. **Review and Commit Before Done**: Stories should pass through `review` and be committed in git before `done`
 5. **Learning Transfer**: SM typically creates next story after previous one is `done` to incorporate learnings

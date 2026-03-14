@@ -17,6 +17,7 @@ description: 'Perform adversarial code review finding specific issues. Use when 
 - Read EVERY file in the File List - verify implementation against story requirements
 - Tasks marked complete but not done = CRITICAL finding
 - Acceptance Criteria not implemented = HIGH severity finding
+- A story may reach `done` ONLY after review passes AND the story-scoped files are committed in git
 - Do not review files that are not part of the application's source code. Always exclude the `_bmad/` and `_bmad-output/` folders from the review. Always exclude IDE and CLI configuration folders like `.cursor/` and `.windsurf/` and `.claude/`
 
 ---
@@ -174,7 +175,7 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     ## 🟢 LOW ISSUES
     - Code style improvements
     - Documentation gaps
-    - Git commit message quality
+    - Minor release-note polish
   </output>
 
   <ask>What should I do with these issues?
@@ -207,18 +208,7 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   </check>
 </step>
 
-<step n="5" goal="Update story status and sync sprint tracking">
-  <!-- Determine new status based on review outcome -->
-  <check if="all HIGH and MEDIUM issues fixed AND all ACs implemented">
-    <action>Set {{new_status}} = "done"</action>
-    <action>Update story Status field to "done"</action>
-  </check>
-  <check if="HIGH or MEDIUM issues remain OR ACs not fully implemented">
-    <action>Set {{new_status}} = "in-progress"</action>
-    <action>Update story Status field to "in-progress"</action>
-  </check>
-  <action>Save story file</action>
-
+<step n="5" goal="Commit approved changes, update story status, and sync sprint tracking">
   <!-- Determine sprint tracking status -->
   <check if="{sprint_status} file exists">
     <action>Set {{current_sprint_status}} = "enabled"</action>
@@ -227,32 +217,85 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     <action>Set {{current_sprint_status}} = "no-sprint-tracking"</action>
   </check>
 
-  <!-- Sync sprint-status.yaml when story status changes (only if sprint tracking enabled) -->
-  <check if="{{current_sprint_status}} != 'no-sprint-tracking'">
-    <action>Load the FULL file: {sprint_status}</action>
-    <action>Find development_status key matching {{story_key}}</action>
+  <check if="HIGH or MEDIUM issues remain OR ACs not fully implemented">
+    <action>Set {{new_status}} = "in-progress"</action>
+    <action>Update story Status field to "in-progress"</action>
+    <action>Save story file</action>
 
-    <check if="{{new_status}} == 'done'">
-      <action>Update development_status[{{story_key}}] = "done"</action>
-      <action>Update last_updated field to current date</action>
-      <action>Save file, preserving ALL comments and structure</action>
-      <output>✅ Sprint status synced: {{story_key}} → done</output>
-    </check>
-
-    <check if="{{new_status}} == 'in-progress'">
+    <check if="{{current_sprint_status}} != 'no-sprint-tracking'">
+      <action>Load the FULL file: {sprint_status}</action>
+      <action>Find development_status key matching {{story_key}}</action>
       <action>Update development_status[{{story_key}}] = "in-progress"</action>
       <action>Update last_updated field to current date</action>
       <action>Save file, preserving ALL comments and structure</action>
       <output>🔄 Sprint status synced: {{story_key}} → in-progress</output>
+
+      <check if="story key not found in sprint status">
+        <output>⚠️ Story file updated, but sprint-status sync failed: {{story_key}} not found in sprint-status.yaml</output>
+      </check>
     </check>
 
-    <check if="story key not found in sprint status">
-      <output>⚠️ Story file updated, but sprint-status sync failed: {{story_key}} not found in sprint-status.yaml</output>
+    <check if="{{current_sprint_status}} == 'no-sprint-tracking'">
+      <output>ℹ️ Story status updated to in-progress (no sprint tracking configured)</output>
     </check>
   </check>
 
-  <check if="{{current_sprint_status}} == 'no-sprint-tracking'">
-    <output>ℹ️ Story status updated (no sprint tracking configured)</output>
+  <check if="all HIGH and MEDIUM issues fixed AND all ACs implemented">
+    <action>Check if git repository exists in current directory</action>
+
+    <check if="git repository exists">
+      <action>Build {{release_file_list}} from Dev Agent Record → File List plus {{story_file}} and {sprint_status} when sprint tracking is enabled</action>
+      <action>Remove duplicates from {{release_file_list}}</action>
+      <action>Ignore unrelated workspace changes outside {{release_file_list}} - NEVER stage or commit them</action>
+      <action>Set {{commit_message}} = `story({{story_key}}): complete code review and mark done`</action>
+
+      <action>Update story Status field to "done"</action>
+      <action>Save story file</action>
+
+      <check if="{{current_sprint_status}} != 'no-sprint-tracking'">
+        <action>Load the FULL file: {sprint_status}</action>
+        <action>Find development_status key matching {{story_key}}</action>
+        <action>Update development_status[{{story_key}}] = "done"</action>
+        <action>Update last_updated field to current date</action>
+        <action>Save file, preserving ALL comments and structure</action>
+
+        <check if="story key not found in sprint status">
+          <output>⚠️ Story file updated, but sprint-status sync failed: {{story_key}} not found in sprint-status.yaml</output>
+        </check>
+      </check>
+
+      <action>Stage ONLY {{release_file_list}} with `git add -- {{release_file_list}}`</action>
+      <action>Run non-interactive `git commit -m "{{commit_message}}"`</action>
+
+      <check if="commit succeeds">
+        <action>Set {{new_status}} = "done"</action>
+        <action>Run `git rev-parse --short HEAD` and store as {{commit_hash}}</action>
+        <output>✅ Story committed and marked done: {{story_key}} @ {{commit_hash}}</output>
+      </check>
+
+      <check if="commit fails">
+        <action>Set {{new_status}} = "review"</action>
+        <action>Update story Status field back to "review"</action>
+        <action>Save story file</action>
+
+        <check if="{{current_sprint_status}} != 'no-sprint-tracking'">
+          <action>Load the FULL file: {sprint_status}</action>
+          <action>Find development_status key matching {{story_key}}</action>
+          <action>Update development_status[{{story_key}}] = "review"</action>
+          <action>Update last_updated field to current date</action>
+          <action>Save file, preserving ALL comments and structure</action>
+        </check>
+
+        <output>⚠️ Review passed, but the final git commit failed. Story remains in "review". Resolve the git issue and rerun code-review.</output>
+      </check>
+    </check>
+
+    <check if="git repository does NOT exist">
+      <action>Set {{new_status}} = "review"</action>
+      <action>Update story Status field to "review"</action>
+      <action>Save story file</action>
+      <output>⚠️ Review passed, but no git repository was detected. Story cannot move to "done" because done now requires a successful git commit.</output>
+    </check>
   </check>
 
   <output>**✅ Review Complete!**
@@ -261,7 +304,7 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     **Issues Fixed:** {{fixed_count}}
     **Action Items Created:** {{action_count}}
 
-    {{#if new_status == "done"}}Code review complete!{{else}}Address the action items and continue development.{{/if}}
+    {{#if new_status == "done"}}Code review complete and committed.{{else}}Address the remaining review or git actions and continue.{{/if}}
   </output>
 </step>
 

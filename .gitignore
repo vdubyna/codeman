@@ -6,6 +6,8 @@ __pycache__/
 .venv/
 venv/
 env/
+.local/
+.codeman/
 .env
 .pytest_cache/
 .mypy_cache/
@@ -17,4 +19,3 @@ htmlcov/
 build/
 dist/
 *.egg-info/
-

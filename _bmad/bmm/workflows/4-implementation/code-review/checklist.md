@@ -16,8 +16,11 @@
 - [ ] Outcome decided (Approve/Changes Requested/Blocked)
 - [ ] Review notes appended under "Senior Developer Review (AI)"
 - [ ] Change Log updated with review entry
+- [ ] `done` used only after a successful story-scoped git commit
+- [ ] Only story-scoped files staged for the final commit
 - [ ] Status updated according to settings (if enabled)
 - [ ] Sprint status synced (if sprint tracking enabled)
+- [ ] Final commit created successfully when outcome is `done`
 - [ ] Story saved successfully
 
 _Reviewer: {{user_name}} on {{date}}_

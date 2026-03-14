@@ -1,0 +1,89 @@
+# generated: 2026-03-13 23:42:21 +0200
+# last_updated: 2026-03-14 07:31:38 +0200
+# project: codeman
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: /Users/vdubyna/Workspace/AI__AGENTS/codeman/_bmad-output/implementation-artifacts
+#
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: "2026-03-13 23:42:21 +0200"
+last_updated: "2026-03-14 07:31:38 +0200"
+project: codeman
+project_key: NOKEY
+tracking_system: file-system
+story_location: "/Users/vdubyna/Workspace/AI__AGENTS/codeman/_bmad-output/implementation-artifacts"
+
+development_status:
+  epic-1: in-progress
+  1-1-set-up-initial-project-from-starter-template: done
+  1-2-register-a-local-repository: done
+  1-3-create-a-normalized-repository-snapshot: backlog
+  1-4-extract-supported-source-files-into-a-source-inventory: backlog
+  1-5-generate-structure-aware-retrieval-chunks: backlog
+  1-6-re-index-after-source-or-configuration-changes: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-build-lexical-index-artifacts: backlog
+  2-2-run-lexical-retrieval-against-indexed-chunks: backlog
+  2-3-present-agent-friendly-ranked-retrieval-results: backlog
+  2-4-build-semantic-retrieval-index-artifacts: backlog
+  2-5-run-semantic-retrieval-queries: backlog
+  2-6-run-hybrid-retrieval-with-fused-ranking: backlog
+  2-7-compare-retrieval-modes-for-the-same-question: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-define-the-layered-configuration-model: backlog
+  3-2-configure-embedding-providers-independently: backlog
+  3-3-create-reusable-retrieval-strategy-profiles: backlog
+  3-4-record-configuration-provenance-for-every-run: backlog
+  3-5-reuse-prior-configurations-in-later-experiments: backlog
+  3-6-key-caches-to-configuration-and-content-identity: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-define-the-golden-query-benchmark-dataset: backlog
+  4-2-execute-a-benchmark-run-against-an-indexed-repository: backlog
+  4-3-calculate-and-store-retrieval-quality-metrics: backlog
+  4-4-generate-benchmark-reports-for-review: backlog
+  4-5-compare-benchmark-runs-across-retrieval-strategies: backlog
+  4-6-detect-and-surface-retrieval-regressions: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-standardize-the-core-cli-workflow-surface: backlog
+  5-2-map-failures-to-stable-error-contracts-and-exit-codes: backlog
+  5-3-produce-structured-run-logs-and-manifests: backlog
+  5-4-surface-subsystem-oriented-diagnostics-safely: backlog
+  5-5-support-repeated-experimental-workflows-without-drift: backlog
+  5-6-prepare-a-shared-retrieval-core-for-future-mcp-reuse: backlog
+  epic-5-retrospective: optional
