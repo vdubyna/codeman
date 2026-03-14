@@ -11,16 +11,22 @@ from codeman.contracts.retrieval import (
     LexicalIndexBuildRecord,
     LexicalQueryDiagnostics,
     LexicalQueryMatch,
-    RetrievalBuildContext,
+    LexicalRetrievalBuildContext,
     RetrievalQueryMetadata,
     RetrievalRepositoryContext,
     RetrievalResultItem,
     RetrievalSnapshotContext,
     RunLexicalQueryResult,
+    RunSemanticQueryResult,
+    SemanticIndexBuildRecord,
+    SemanticQueryDiagnostics,
+    SemanticQueryMatch,
+    SemanticRetrievalBuildContext,
 )
 
 __all__ = [
     "ResolvedLexicalMatch",
+    "ResolvedSemanticMatch",
     "RetrievalResultFormatter",
 ]
 
@@ -30,6 +36,15 @@ class ResolvedLexicalMatch:
     """One lexical match resolved to persisted chunk metadata and payload content."""
 
     match: LexicalQueryMatch
+    chunk: ChunkRecord
+    payload: ChunkPayloadDocument
+
+
+@dataclass(slots=True, frozen=True)
+class ResolvedSemanticMatch:
+    """One semantic match resolved to persisted chunk metadata and payload content."""
+
+    match: SemanticQueryMatch
     chunk: ChunkRecord
     payload: ChunkPayloadDocument
 
@@ -64,13 +79,48 @@ class RetrievalResultFormatter:
                 revision_identity=snapshot.revision_identity,
                 revision_source=snapshot.revision_source,
             ),
-            build=RetrievalBuildContext(
+            build=LexicalRetrievalBuildContext(
                 build_id=build.build_id,
                 lexical_engine=build.lexical_engine,
                 tokenizer_spec=build.tokenizer_spec,
                 indexed_fields=list(build.indexed_fields),
             ),
             results=[self._format_match(match) for match in matches],
+            diagnostics=diagnostics,
+        )
+
+    def format_semantic_results(
+        self,
+        *,
+        repository: RepositoryRecord,
+        snapshot: SnapshotRecord,
+        build: SemanticIndexBuildRecord,
+        query_text: str,
+        diagnostics: SemanticQueryDiagnostics,
+        matches: Sequence[ResolvedSemanticMatch],
+    ) -> RunSemanticQueryResult:
+        """Build the shared semantic retrieval package from enriched match inputs."""
+
+        return RunSemanticQueryResult(
+            query=RetrievalQueryMetadata(text=query_text),
+            repository=RetrievalRepositoryContext(
+                repository_id=repository.repository_id,
+                repository_name=repository.repository_name,
+            ),
+            snapshot=RetrievalSnapshotContext(
+                snapshot_id=snapshot.snapshot_id,
+                revision_identity=snapshot.revision_identity,
+                revision_source=snapshot.revision_source,
+            ),
+            build=SemanticRetrievalBuildContext(
+                build_id=build.build_id,
+                provider_id=build.provider_id,
+                model_id=build.model_id,
+                model_version=build.model_version,
+                vector_engine=build.vector_engine,
+                semantic_config_fingerprint=build.semantic_config_fingerprint,
+            ),
+            results=[self._format_semantic_match(match) for match in matches],
             diagnostics=diagnostics,
         )
 
@@ -91,6 +141,25 @@ class RetrievalResultFormatter:
                 limit=self.preview_char_limit,
             ),
             explanation=self._build_explanation(resolved.match),
+        )
+
+    def _format_semantic_match(self, resolved: ResolvedSemanticMatch) -> RetrievalResultItem:
+        return RetrievalResultItem(
+            chunk_id=resolved.match.chunk_id,
+            relative_path=resolved.chunk.relative_path,
+            language=resolved.chunk.language,
+            strategy=resolved.chunk.strategy,
+            rank=resolved.match.rank,
+            score=resolved.match.score,
+            start_line=resolved.chunk.start_line,
+            end_line=resolved.chunk.end_line,
+            start_byte=resolved.chunk.start_byte,
+            end_byte=resolved.chunk.end_byte,
+            content_preview=self._truncate(
+                self._normalize_whitespace(resolved.payload.content),
+                limit=self.preview_char_limit,
+            ),
+            explanation="Ranked by embedding similarity against the persisted semantic index.",
         )
 
     def _build_explanation(self, match: LexicalQueryMatch) -> str:

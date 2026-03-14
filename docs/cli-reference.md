@@ -132,3 +132,79 @@ JSON output keeps the standard success envelope on `stdout` and exposes a single
   }
 }
 ```
+
+```bash
+uv run codeman query semantic <repository-id> "controller home route"
+uv run codeman query semantic <repository-id> "controller home route" --output-format json
+uv run codeman query semantic <repository-id> --query="--query" --output-format json
+```
+
+`query semantic` returns the same shared retrieval package shape used by lexical retrieval, but it resolves
+the current semantic baseline for the repository and current semantic configuration fingerprint first.
+If the latest snapshot or semantic configuration has drifted since the last semantic build, the command fails
+with `semantic_build_baseline_missing` instead of silently querying stale vector artifacts.
+If the persisted vector artifact no longer matches its recorded metadata, the command fails with
+`semantic_artifact_corrupt` instead of returning a misleading empty result set.
+
+Text output includes:
+- Retrieval mode plus repository, snapshot, build, query, latency, provider, model, vector engine, and semantic configuration fingerprint metadata.
+- One ranked block per result with stable `chunk_id`, relative path, span metadata, language/strategy, score, compact preview text, and a truthful semantic explanation.
+- The same top-20 cap and truncated-count reporting used by `query lexical`.
+
+JSON output keeps the standard success envelope on `stdout` and exposes the same retrieval package fields, with
+semantic build metadata under `data.build`:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "retrieval_mode": "semantic",
+    "query": {
+      "text": "controller home route"
+    },
+    "repository": {
+      "repository_id": "repo-123",
+      "repository_name": "registered-repo"
+    },
+    "snapshot": {
+      "snapshot_id": "snapshot-123",
+      "revision_identity": "revision-abc",
+      "revision_source": "filesystem_fingerprint"
+    },
+    "build": {
+      "build_id": "semantic-build-123",
+      "provider_id": "local-hash",
+      "model_id": "fixture-local",
+      "model_version": "2026-03-14",
+      "vector_engine": "sqlite-exact",
+      "semantic_config_fingerprint": "semantic-fingerprint-123"
+    },
+    "results": [
+      {
+        "chunk_id": "chunk-123",
+        "relative_path": "src/Controller/HomeController.php",
+        "language": "php",
+        "strategy": "php_structure",
+        "rank": 1,
+        "score": 0.875,
+        "start_line": 4,
+        "end_line": 10,
+        "start_byte": 32,
+        "end_byte": 180,
+        "content_preview": "final class HomeController { public function __invoke(): string { return 'home'; } }",
+        "explanation": "Ranked by embedding similarity against the persisted semantic index."
+      }
+    ],
+    "diagnostics": {
+      "match_count": 1,
+      "query_latency_ms": 7,
+      "total_match_count": 8,
+      "truncated": true
+    }
+  },
+  "meta": {
+    "command": "query.semantic",
+    "output_format": "json"
+  }
+}
+```

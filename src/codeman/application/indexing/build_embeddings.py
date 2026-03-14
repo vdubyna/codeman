@@ -24,9 +24,51 @@ __all__ = [
     "BuildEmbeddingsStage",
     "BuildEmbeddingsStageResult",
     "LOCAL_HASH_PROVIDER_ID",
+    "resolve_local_embedding_provider",
 ]
 
 LOCAL_HASH_PROVIDER_ID = "local-hash"
+
+
+def resolve_local_embedding_provider(
+    semantic_indexing_config: SemanticIndexingConfig,
+) -> EmbeddingProviderDescriptor:
+    """Resolve the configured local embedding provider or fail safely."""
+
+    provider_id = semantic_indexing_config.provider_id
+    if provider_id != LOCAL_HASH_PROVIDER_ID:
+        raise EmbeddingProviderUnavailableError(
+            "Semantic indexing requires an explicit local embedding provider. "
+            "Set CODEMAN_SEMANTIC_PROVIDER_ID=local-hash and "
+            "CODEMAN_SEMANTIC_LOCAL_MODEL_PATH=/path/to/local/model before running "
+            "`codeman index build-semantic`.",
+            details={
+                "provider_id": provider_id,
+                "local_model_path": str(semantic_indexing_config.local_model_path)
+                if semantic_indexing_config.local_model_path is not None
+                else None,
+            },
+        )
+
+    local_model_path = semantic_indexing_config.local_model_path
+    if local_model_path is None or not local_model_path.exists():
+        raise EmbeddingProviderUnavailableError(
+            "Semantic indexing requires a readable local model path. "
+            "Set CODEMAN_SEMANTIC_LOCAL_MODEL_PATH to an existing local path before "
+            "running `codeman index build-semantic`.",
+            details={
+                "provider_id": provider_id,
+                "local_model_path": str(local_model_path) if local_model_path is not None else None,
+            },
+        )
+
+    return EmbeddingProviderDescriptor(
+        provider_id=provider_id,
+        model_id=semantic_indexing_config.model_id,
+        model_version=semantic_indexing_config.model_version,
+        is_external_provider=False,
+        local_model_path=local_model_path,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +98,7 @@ class BuildEmbeddingsStage:
     ) -> BuildEmbeddingsStageResult:
         """Generate embeddings from persisted source documents only."""
 
-        provider = self._resolve_provider()
+        provider = resolve_local_embedding_provider(self.semantic_indexing_config)
         try:
             vector_dimension = self.semantic_indexing_config.resolved_vector_dimension()
         except ValueError as exc:
@@ -102,42 +144,4 @@ class BuildEmbeddingsStage:
             provider=provider,
             documents=list(documents),
             embedding_documents_path=embedding_documents_path,
-        )
-
-    def _resolve_provider(self) -> EmbeddingProviderDescriptor:
-        provider_id = self.semantic_indexing_config.provider_id
-        if provider_id != LOCAL_HASH_PROVIDER_ID:
-            raise EmbeddingProviderUnavailableError(
-                "Semantic indexing requires an explicit local embedding provider. "
-                "Set CODEMAN_SEMANTIC_PROVIDER_ID=local-hash and "
-                "CODEMAN_SEMANTIC_LOCAL_MODEL_PATH=/path/to/local/model before running "
-                "`codeman index build-semantic`.",
-                details={
-                    "provider_id": provider_id,
-                    "local_model_path": str(self.semantic_indexing_config.local_model_path)
-                    if self.semantic_indexing_config.local_model_path is not None
-                    else None,
-                },
-            )
-
-        local_model_path = self.semantic_indexing_config.local_model_path
-        if local_model_path is None or not local_model_path.exists():
-            raise EmbeddingProviderUnavailableError(
-                "Semantic indexing requires a readable local model path. "
-                "Set CODEMAN_SEMANTIC_LOCAL_MODEL_PATH to an existing local path before "
-                "running `codeman index build-semantic`.",
-                details={
-                    "provider_id": provider_id,
-                    "local_model_path": str(local_model_path)
-                    if local_model_path is not None
-                    else None,
-                },
-            )
-
-        return EmbeddingProviderDescriptor(
-            provider_id=provider_id,
-            model_id=self.semantic_indexing_config.model_id,
-            model_version=self.semantic_indexing_config.model_version,
-            is_external_provider=False,
-            local_model_path=local_model_path,
         )

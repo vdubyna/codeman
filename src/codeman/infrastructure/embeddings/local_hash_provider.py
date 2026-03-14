@@ -11,6 +11,7 @@ from codeman.application.ports.embedding_provider_port import EmbeddingProviderP
 from codeman.contracts.retrieval import (
     EmbeddingProviderDescriptor,
     SemanticEmbeddingDocument,
+    SemanticQueryEmbedding,
     SemanticSourceDocument,
 )
 
@@ -73,6 +74,27 @@ class DeterministicLocalHashEmbeddingProvider(EmbeddingProviderPort):
             for document in documents
         ]
 
+    def embed_query(
+        self,
+        *,
+        provider: EmbeddingProviderDescriptor,
+        query_text: str,
+        vector_dimension: int,
+    ) -> SemanticQueryEmbedding:
+        """Return a deterministic query embedding without inventing document metadata."""
+
+        return SemanticQueryEmbedding(
+            provider_id=provider.provider_id,
+            model_id=provider.model_id,
+            model_version=provider.model_version,
+            vector_dimension=vector_dimension,
+            embedding=self._build_query_embedding(
+                provider=provider,
+                query_text=query_text,
+                vector_dimension=vector_dimension,
+            ),
+        )
+
     @staticmethod
     def _build_embedding(
         *,
@@ -89,6 +111,30 @@ class DeterministicLocalHashEmbeddingProvider(EmbeddingProviderPort):
                 document.chunk_id,
                 document.source_content_hash,
                 document.content,
+            ],
+        ).encode("utf-8")
+        raw = _expanded_digest(seed, vector_dimension * 4)
+        values = [
+            (int.from_bytes(raw[index : index + 4], "big") / 2**31) - 1.0
+            for index in range(0, len(raw), 4)
+        ]
+        return _normalize(values[:vector_dimension])
+
+    @staticmethod
+    def _build_query_embedding(
+        *,
+        provider: EmbeddingProviderDescriptor,
+        query_text: str,
+        vector_dimension: int,
+    ) -> list[float]:
+        seed = "\0".join(
+            [
+                provider.provider_id,
+                provider.model_id,
+                provider.model_version,
+                str(provider.local_model_path) if provider.local_model_path is not None else "",
+                "semantic-query",
+                query_text,
             ],
         ).encode("utf-8")
         raw = _expanded_digest(seed, vector_dimension * 4)

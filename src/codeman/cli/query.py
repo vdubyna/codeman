@@ -5,11 +5,17 @@ from __future__ import annotations
 import typer
 
 from codeman.application.query.run_lexical_query import LexicalQueryError
+from codeman.application.query.run_semantic_query import SemanticQueryError
 from codeman.bootstrap import BootstrapContainer
 from codeman.cli.common import OutputFormat, build_command_meta, emit_json_response
 from codeman.contracts.common import SuccessEnvelope
 from codeman.contracts.errors import ErrorDetail, FailureEnvelope
-from codeman.contracts.retrieval import RunLexicalQueryRequest
+from codeman.contracts.retrieval import (
+    RunLexicalQueryRequest,
+    RunLexicalQueryResult,
+    RunSemanticQueryRequest,
+    RunSemanticQueryResult,
+)
 
 app = typer.Typer(help="Retrieval query commands.", no_args_is_help=True)
 
@@ -21,14 +27,18 @@ def query_group() -> None:
 
 def _handle_query_error(
     *,
-    error: LexicalQueryError,
+    error: LexicalQueryError | SemanticQueryError,
     output_format: OutputFormat,
     command_name: str,
 ) -> None:
-    """Render lexical-query failures in the requested output format."""
+    """Render retrieval-query failures in the requested output format."""
 
     envelope = FailureEnvelope(
-        error=ErrorDetail(code=error.error_code, message=error.message),
+        error=ErrorDetail(
+            code=error.error_code,
+            message=error.message,
+            details=getattr(error, "details", None),
+        ),
         meta=build_command_meta(command_name, output_format),
     )
     if output_format is OutputFormat.JSON:
@@ -37,6 +47,62 @@ def _handle_query_error(
         typer.secho(error.message, err=True, fg=typer.colors.RED)
 
     raise typer.Exit(code=error.exit_code)
+
+
+def _resolve_query_text(
+    *,
+    query_text: str | None,
+    query: str | None,
+) -> str:
+    if query_text is not None and query is not None:
+        typer.secho(
+            "Provide either QUERY or --query, not both.",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
+
+    resolved_query = query if query is not None else query_text
+    if resolved_query is None:
+        typer.secho(
+            "Query text is required. Provide QUERY or --query.",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
+    return resolved_query
+
+
+def _result_blocks(
+    result: RunLexicalQueryResult | RunSemanticQueryResult,
+) -> list[str]:
+    return [
+        "\n".join(
+            [
+                f"{item.rank}. {item.relative_path} [{item.chunk_id}]",
+                (
+                    f"   span: lines {item.start_line}-{item.end_line} "
+                    f"bytes {item.start_byte}-{item.end_byte}"
+                ),
+                (f"   language/strategy: {item.language}/{item.strategy} score={item.score:.4f}"),
+                f"   preview: {item.content_preview}",
+                f"   explanation: {item.explanation}",
+            ]
+        )
+        for item in result.results
+    ]
+
+
+def _summary_line(
+    *,
+    result_count: int,
+    total_count: int,
+    truncated: bool,
+    label: str,
+) -> str:
+    if truncated:
+        return f"{label} returned {result_count} of {total_count} results (truncated)"
+    return f"{label} returned {result_count} results"
 
 
 @app.command("lexical")
@@ -55,22 +121,7 @@ def lexical(
 
     from codeman.cli.app import get_container
 
-    if query_text is not None and query is not None:
-        typer.secho(
-            "Provide either QUERY or --query, not both.",
-            err=True,
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(code=2)
-
-    resolved_query = query if query is not None else query_text
-    if resolved_query is None:
-        typer.secho(
-            "Query text is required. Provide QUERY or --query.",
-            err=True,
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(code=2)
+    resolved_query = _resolve_query_text(query_text=query_text, query=query)
 
     typer.echo(
         f"Running lexical query for repository: {repository_id}",
@@ -99,16 +150,13 @@ def lexical(
         emit_json_response(envelope)
         return
 
-    summary_line = (
-        "Lexical retrieval returned "
-        f"{result.diagnostics.match_count} of "
-        f"{result.diagnostics.total_match_count} results (truncated)"
-        if result.diagnostics.truncated
-        else f"Lexical retrieval returned {result.diagnostics.match_count} results"
-    )
-
     lines = [
-        summary_line,
+        _summary_line(
+            result_count=result.diagnostics.match_count,
+            total_count=result.diagnostics.total_match_count,
+            truncated=result.diagnostics.truncated,
+            label="Lexical retrieval",
+        ),
         f"Retrieval Mode: {result.retrieval_mode}",
         f"Repository ID: {result.repository.repository_id}",
         f"Snapshot ID: {result.snapshot.snapshot_id}",
@@ -117,26 +165,78 @@ def lexical(
         f"Latency: {result.diagnostics.query_latency_ms} ms",
     ]
     if result.results:
-        lines.extend(
-            [
-                "\n".join(
-                    [
-                        f"{item.rank}. {item.relative_path} [{item.chunk_id}]",
-                        (
-                            f"   span: lines {item.start_line}-{item.end_line} "
-                            f"bytes {item.start_byte}-{item.end_byte}"
-                        ),
-                        (
-                            f"   language/strategy: {item.language}/{item.strategy} "
-                            f"score={item.score:.4f}"
-                        ),
-                        f"   preview: {item.content_preview}",
-                        f"   explanation: {item.explanation}",
-                    ]
-                )
-                for item in result.results
-            ]
-        )
+        lines.extend(_result_blocks(result))
     else:
         lines.append("No lexical matches found.")
+    typer.echo("\n".join(lines))
+
+
+@app.command("semantic")
+def semantic(
+    ctx: typer.Context,
+    repository_id: str,
+    query_text: str | None = typer.Argument(None, metavar="QUERY"),
+    query: str | None = typer.Option(
+        None,
+        "--query",
+        help="Explicit query text. Use this when the query starts with '-'.",
+    ),
+    output_format: OutputFormat = typer.Option(OutputFormat.TEXT, "--output-format"),
+) -> None:
+    """Run a semantic retrieval query against the current repository build."""
+
+    from codeman.cli.app import get_container
+
+    resolved_query = _resolve_query_text(query_text=query_text, query=query)
+
+    typer.echo(
+        f"Running semantic query for repository: {repository_id}",
+        err=True,
+    )
+    container: BootstrapContainer = get_container(ctx)
+    try:
+        result = container.run_semantic_query.execute(
+            RunSemanticQueryRequest(
+                repository_id=repository_id,
+                query_text=resolved_query,
+            ),
+        )
+    except SemanticQueryError as error:
+        _handle_query_error(
+            error=error,
+            output_format=output_format,
+            command_name="query.semantic",
+        )
+
+    envelope = SuccessEnvelope(
+        data=result,
+        meta=build_command_meta("query.semantic", output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+        return
+
+    lines = [
+        _summary_line(
+            result_count=result.diagnostics.match_count,
+            total_count=result.diagnostics.total_match_count,
+            truncated=result.diagnostics.truncated,
+            label="Semantic retrieval",
+        ),
+        f"Retrieval Mode: {result.retrieval_mode}",
+        f"Repository ID: {result.repository.repository_id}",
+        f"Snapshot ID: {result.snapshot.snapshot_id}",
+        f"Build ID: {result.build.build_id}",
+        f"Provider: {result.build.provider_id}",
+        f"Model: {result.build.model_id}",
+        f"Model Version: {result.build.model_version}",
+        f"Vector Engine: {result.build.vector_engine}",
+        f"Semantic Config Fingerprint: {result.build.semantic_config_fingerprint}",
+        f"Query: {result.query.text}",
+        f"Latency: {result.diagnostics.query_latency_ms} ms",
+    ]
+    if result.results:
+        lines.extend(_result_blocks(result))
+    else:
+        lines.append("No semantic matches found.")
     typer.echo("\n".join(lines))

@@ -13,6 +13,7 @@ from codeman.application.indexing.build_vector_index import BuildVectorIndexStag
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesUseCase
 from codeman.application.query.format_results import RetrievalResultFormatter
 from codeman.application.query.run_lexical_query import RunLexicalQueryUseCase
+from codeman.application.query.run_semantic_query import RunSemanticQueryUseCase
 from codeman.application.repo.create_snapshot import CreateSnapshotUseCase
 from codeman.application.repo.register_repository import RegisterRepositoryUseCase
 from codeman.application.repo.reindex_repository import ReindexRepositoryUseCase
@@ -32,6 +33,9 @@ from codeman.infrastructure.indexes.lexical.sqlite_fts5_query_engine import (
 )
 from codeman.infrastructure.indexes.vector.sqlite_exact_builder import (
     SqliteExactVectorIndexBuilder,
+)
+from codeman.infrastructure.indexes.vector.sqlite_exact_query_engine import (
+    SqliteExactVectorQueryEngine,
 )
 from codeman.infrastructure.parsers.parser_registry import ParserRegistry
 from codeman.infrastructure.persistence.sqlite.engine import create_sqlite_engine
@@ -82,6 +86,7 @@ class BootstrapContainer:
     build_lexical_index: BuildLexicalIndexUseCase
     build_semantic_index: BuildSemanticIndexUseCase
     run_lexical_query: RunLexicalQueryUseCase
+    run_semantic_query: RunSemanticQueryUseCase
     reindex_repository: ReindexRepositoryUseCase
 
 
@@ -199,6 +204,18 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         lexical_query=SqliteFts5LexicalQueryEngine(),
         formatter=RetrievalResultFormatter(),
     )
+    run_semantic_query = RunSemanticQueryUseCase(
+        runtime_paths=runtime_paths,
+        repository_store=metadata_store,
+        snapshot_store=snapshot_store,
+        semantic_index_build_store=semantic_index_build_store,
+        chunk_store=chunk_store,
+        artifact_store=artifact_store,
+        embedding_provider=DeterministicLocalHashEmbeddingProvider(),
+        semantic_query=SqliteExactVectorQueryEngine(),
+        formatter=RetrievalResultFormatter(),
+        semantic_indexing_config=config.semantic_indexing,
+    )
     reindex_repository = ReindexRepositoryUseCase(
         runtime_paths=runtime_paths,
         repository_store=metadata_store,
@@ -231,5 +248,6 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         build_lexical_index=build_lexical_index,
         build_semantic_index=build_semantic_index,
         run_lexical_query=run_lexical_query,
+        run_semantic_query=run_semantic_query,
         reindex_repository=reindex_repository,
     )

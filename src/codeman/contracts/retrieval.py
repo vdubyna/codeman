@@ -102,6 +102,18 @@ class SemanticEmbeddingDocument(BaseModel):
     embedding: list[float] = Field(default_factory=list)
 
 
+class SemanticQueryEmbedding(BaseModel):
+    """Provider-owned query embedding used for semantic retrieval execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    model_id: str
+    model_version: str
+    vector_dimension: int
+    embedding: list[float] = Field(default_factory=list)
+
+
 class SemanticEmbeddingArtifactDocument(BaseModel):
     """Persisted embedding artifact for one semantic build configuration."""
 
@@ -234,6 +246,16 @@ class RunLexicalQueryRequest(BaseModel):
     max_results: int = Field(default=20, gt=0, le=100)
 
 
+class RunSemanticQueryRequest(BaseModel):
+    """Input DTO for semantic-query execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository_id: str
+    query_text: str
+    max_results: int = Field(default=20, gt=0, le=100)
+
+
 class RetrievalQueryMetadata(BaseModel):
     """Stable query metadata shared by retrieval result packages."""
 
@@ -267,9 +289,24 @@ class RetrievalBuildContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     build_id: str
+
+
+class LexicalRetrievalBuildContext(RetrievalBuildContext):
+    """Compact lexical build identity for retrieval output."""
+
     lexical_engine: str
     tokenizer_spec: str
     indexed_fields: list[str] = Field(default_factory=list)
+
+
+class SemanticRetrievalBuildContext(RetrievalBuildContext):
+    """Compact semantic build identity for retrieval output."""
+
+    provider_id: str
+    model_id: str
+    model_version: str
+    vector_engine: str
+    semantic_config_fingerprint: str
 
 
 class LexicalQueryMatch(BaseModel):
@@ -313,6 +350,29 @@ class LexicalQueryResult(BaseModel):
     diagnostics: LexicalQueryDiagnostics
 
 
+class SemanticQueryMatch(BaseModel):
+    """One ranked semantic match returned from a persisted vector artifact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_id: str
+    score: float
+    rank: int
+
+
+class SemanticQueryDiagnostics(RetrievalQueryDiagnostics):
+    """Minimal diagnostics safe for CLI and JSON semantic query output."""
+
+
+class SemanticQueryResult(BaseModel):
+    """Adapter-facing semantic query payload before repository context is attached."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    matches: list[SemanticQueryMatch] = Field(default_factory=list)
+    diagnostics: SemanticQueryDiagnostics
+
+
 class RetrievalResultItem(BaseModel):
     """Stable result item shared by retrieval result packages."""
 
@@ -350,3 +410,11 @@ class RunLexicalQueryResult(RetrievalResultPackage):
     """Output DTO for successful lexical-query execution."""
 
     retrieval_mode: Literal["lexical"] = "lexical"
+    build: LexicalRetrievalBuildContext
+
+
+class RunSemanticQueryResult(RetrievalResultPackage):
+    """Output DTO for successful semantic-query execution."""
+
+    retrieval_mode: Literal["semantic"] = "semantic"
+    build: SemanticRetrievalBuildContext

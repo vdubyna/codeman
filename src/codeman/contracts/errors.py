@@ -56,6 +56,8 @@ class ErrorCode:
     EMBEDDING_PROVIDER_UNAVAILABLE = "embedding_provider_unavailable"
     VECTOR_INDEX_BUILD_FAILED = "vector_index_build_failed"
     SEMANTIC_ARTIFACT_MISSING = "semantic_artifact_missing"
+    SEMANTIC_ARTIFACT_CORRUPT = "semantic_artifact_corrupt"
     SEMANTIC_BUILD_BASELINE_MISSING = "semantic_build_baseline_missing"
+    SEMANTIC_QUERY_FAILED = "semantic_query_failed"
     REINDEX_FAILED = "reindex_failed"
     INTERNAL_ERROR = "internal_error"

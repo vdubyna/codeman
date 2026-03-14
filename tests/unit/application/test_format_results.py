@@ -5,6 +5,7 @@ from pathlib import Path
 
 from codeman.application.query.format_results import (
     ResolvedLexicalMatch,
+    ResolvedSemanticMatch,
     RetrievalResultFormatter,
 )
 from codeman.contracts.chunking import ChunkPayloadDocument, ChunkRecord
@@ -13,6 +14,9 @@ from codeman.contracts.retrieval import (
     LexicalIndexBuildRecord,
     LexicalQueryDiagnostics,
     LexicalQueryMatch,
+    SemanticIndexBuildRecord,
+    SemanticQueryDiagnostics,
+    SemanticQueryMatch,
 )
 
 
@@ -60,6 +64,25 @@ def build_index_record(workspace: Path, repository_id: str) -> LexicalIndexBuild
     )
 
 
+def build_semantic_index_record(workspace: Path, repository_id: str) -> SemanticIndexBuildRecord:
+    return SemanticIndexBuildRecord(
+        build_id="semantic-build-123",
+        repository_id=repository_id,
+        snapshot_id="snapshot-123",
+        revision_identity="revision-abc",
+        revision_source="filesystem_fingerprint",
+        semantic_config_fingerprint="semantic-fingerprint-123",
+        provider_id="local-hash",
+        model_id="fixture-local",
+        model_version="2026-03-14",
+        vector_engine="sqlite-exact",
+        document_count=3,
+        embedding_dimension=8,
+        artifact_path=workspace / ".codeman" / "indexes" / "semantic.sqlite3",
+        created_at=datetime.now(UTC),
+    )
+
+
 def build_resolved_match(*, content: str) -> ResolvedLexicalMatch:
     now = datetime.now(UTC)
     return ResolvedLexicalMatch(
@@ -74,6 +97,50 @@ def build_resolved_match(*, content: str) -> ResolvedLexicalMatch:
             content_match_context="final class [HomeController] { ... }",
             path_match_highlighted=True,
             content_match_highlighted=True,
+        ),
+        chunk=ChunkRecord(
+            chunk_id="chunk-1",
+            snapshot_id="snapshot-123",
+            repository_id="repo-123",
+            source_file_id="source-123",
+            relative_path="src/Controller/HomeController.php",
+            language="php",
+            strategy="php_structure",
+            serialization_version="1",
+            source_content_hash="hash-123",
+            start_line=4,
+            end_line=10,
+            start_byte=32,
+            end_byte=180,
+            payload_path=Path(".codeman/artifacts/snapshots/snapshot-123/chunks/chunk-1.json"),
+            created_at=now,
+        ),
+        payload=ChunkPayloadDocument(
+            chunk_id="chunk-1",
+            snapshot_id="snapshot-123",
+            repository_id="repo-123",
+            source_file_id="source-123",
+            relative_path="src/Controller/HomeController.php",
+            language="php",
+            strategy="php_structure",
+            serialization_version="1",
+            source_content_hash="hash-123",
+            start_line=4,
+            end_line=10,
+            start_byte=32,
+            end_byte=180,
+            content=content,
+        ),
+    )
+
+
+def build_resolved_semantic_match(*, content: str) -> ResolvedSemanticMatch:
+    now = datetime.now(UTC)
+    return ResolvedSemanticMatch(
+        match=SemanticQueryMatch(
+            chunk_id="chunk-1",
+            score=0.875,
+            rank=1,
         ),
         chunk=ChunkRecord(
             chunk_id="chunk-1",
@@ -217,3 +284,46 @@ def test_formatter_returns_empty_results_without_extra_noise(tmp_path: Path) -> 
     assert result.retrieval_mode == "lexical"
     assert result.results == []
     assert result.diagnostics.match_count == 0
+
+
+def test_formatter_builds_semantic_result_with_truthful_explanation(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    repository_path.mkdir()
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(repository.repository_id, workspace)
+    build = build_semantic_index_record(workspace, repository.repository_id)
+    formatter = RetrievalResultFormatter(preview_char_limit=72)
+
+    result = formatter.format_semantic_results(
+        repository=repository,
+        snapshot=snapshot,
+        build=build,
+        query_text="controller home route",
+        diagnostics=SemanticQueryDiagnostics(
+            match_count=1,
+            query_latency_ms=7,
+            total_match_count=3,
+            truncated=True,
+        ),
+        matches=[
+            build_resolved_semantic_match(
+                content=(
+                    "final class HomeController { public function __invoke(): string "
+                    "{ return 'home'; } }"
+                ),
+            )
+        ],
+    )
+
+    assert result.retrieval_mode == "semantic"
+    assert result.build.provider_id == "local-hash"
+    assert result.build.model_version == "2026-03-14"
+    assert result.build.vector_engine == "sqlite-exact"
+    assert result.build.semantic_config_fingerprint == "semantic-fingerprint-123"
+    assert result.results[0].chunk_id == "chunk-1"
+    assert result.results[0].content_preview.endswith("...")
+    assert result.results[0].explanation == (
+        "Ranked by embedding similarity against the persisted semantic index."
+    )
