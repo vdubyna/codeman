@@ -14,10 +14,17 @@ stepsCompleted:
   - step-10-nonfunctional
   - step-11-polish
   - step-12-complete
+  - step-e-01-discovery
+  - step-e-02-review
+  - step-e-03-edit
 inputDocuments:
   - inline://user-provided-project-idea-2026-03-13
   - inline://user-provided-tech-stack-python-uv-2026-03-13
 workflowType: 'prd'
+lastEdited: '2026-03-14'
+editHistory:
+  - date: '2026-03-14'
+    summary: Added optional OpenAI-assisted evaluation workflows, provider transparency, and reproducibility requirements.
 documentCounts:
   productBriefs: 0
   research: 0
@@ -46,7 +53,7 @@ This project delivers an agent-oriented hybrid code retrieval system for mixed-s
 
 The MVP solves a specific problem: generic code search tools do not reliably serve agent workflows in heterogeneous repositories. Pure lexical search is strong for symbol-heavy lookup but weak on semantic intent. Pure vector search improves semantic recall but often loses structural precision, symbol fidelity, and explanation quality. File-level retrieval is too coarse, while naive chunking breaks the structural boundaries agents need to reason correctly.
 
-The proposed product provides a modular retrieval pipeline that builds a normalized repository snapshot, parses source files through language-specific adapters, produces structurally meaningful chunks, indexes them through both lexical and vector subsystems, fuses ranked results in a hybrid retriever, and returns agent-friendly retrieval packages through a CLI-first interface. The MVP also includes an evaluation harness with golden queries and measurable retrieval metrics so the system can be improved through controlled experimentation instead of intuition. MCP is a planned Phase 2 interface layered onto the same retrieval core.
+The proposed product provides a modular retrieval pipeline that builds a normalized repository snapshot, parses source files through language-specific adapters, produces structurally meaningful chunks, indexes them through both lexical and vector subsystems, fuses ranked results in a hybrid retriever, and returns agent-friendly retrieval packages through a CLI-first interface. The MVP also includes an evaluation harness with golden queries and measurable retrieval metrics so the system can be improved through controlled experimentation instead of intuition. Core local development must remain fully usable without OpenAI or any other external provider. Optional provider-backed evaluation workflows may use OpenAI for synthetic benchmark generation, LLM-as-a-judge grading, and semantic retrieval experiments, but only through explicit opt-in configuration and visible evaluation metadata. MCP is a planned Phase 2 interface layered onto the same retrieval core.
 
 The product is intentionally architecture-first and optimization-ready. Each major subsystem has a narrow responsibility and can later be independently tuned, replaced, benchmarked, or mutated by automated experimentation loops. This makes the MVP useful as a working developer tool today and a foundation for future autosearch and automated retrieval optimization work.
 
@@ -56,7 +63,7 @@ This is not a generic developer search utility. It is a retrieval platform desig
 
 The key insight is that agents need more than "relevant files." They need structurally coherent retrieval units, metadata-rich embedding documents, strong support for exact symbol search, semantic recall for natural-language intent, and ranked outputs that are easy to consume in reasoning loops. The product therefore treats chunking, embeddings, lexical retrieval, vector retrieval, and result fusion as explicit first-class modules rather than hiding them inside a monolithic indexing pipeline.
 
-Users should prefer this product over grep-only, embeddings-only, or generic code search alternatives because it is optimized for mixed-language repositories and agent execution patterns. It aims to improve retrieval quality in measurable terms, not only subjective developer experience, and it is built to support future automated optimization rather than requiring manual redesign when experimentation becomes important.
+Users should prefer this product over grep-only, embeddings-only, or generic code search alternatives because it is optimized for mixed-language repositories and agent execution patterns. It aims to improve retrieval quality in measurable terms, not only subjective developer experience, and it is built to support future automated optimization rather than requiring manual redesign when experimentation becomes important. It also keeps external-provider usage explicit and optional, so quality experiments can expand without turning local-first development into a hosted dependency.
 
 ## Project Classification
 
@@ -95,11 +102,11 @@ At 12 months, success means:
 
 ### Technical Success
 
-Technical success requires not only end-to-end functionality but also controlled extensibility. The MVP must index a local mixed-language repository, generate structurally meaningful retrieval chunks, support lexical retrieval, semantic retrieval, and hybrid fusion, and return agent-friendly outputs through the CLI.
+Technical success requires not only end-to-end functionality but also controlled extensibility. The MVP must index a local mixed-language repository, generate structurally meaningful retrieval chunks, support lexical retrieval, semantic retrieval, and hybrid fusion, and return agent-friendly outputs through the CLI. The default path must stay local-first: lexical and other core development workflows must remain usable without OpenAI, and any provider-backed evaluation path must be explicitly enabled rather than silently assumed.
 
 The architecture is successful only if bounded subsystems remain independently replaceable. Changes to chunking, embedding providers, vector indexing, lexical ranking, or fusion logic should be implementable as localized module or configuration changes rather than cross-system rewrites.
 
-Phase 2 interface growth, including MCP, must reuse the same core indexing and retrieval services so that interface expansion does not fragment system behavior. Evaluation must be built into the product lifecycle: benchmark execution, metric reporting, and regression comparison are first-class capabilities, not optional tooling.
+Phase 2 interface growth, including MCP, must reuse the same core indexing and retrieval services so that interface expansion does not fragment system behavior. Evaluation must be built into the product lifecycle: benchmark execution, metric reporting, and regression comparison are first-class capabilities, not optional tooling. Optional OpenAI-assisted workflows may improve benchmark coverage and grading throughput, but they must remain bounded experiments with visible provider, model, grader version, and evaluation metadata.
 
 ### Measurable Outcomes
 
@@ -107,11 +114,14 @@ The MVP should achieve the following measurable outcomes:
 
 - Index a representative local mixed-stack repository containing PHP, JavaScript, HTML, and Twig.
 - Support lexical retrieval for exact-match and symbol-heavy queries.
-- Support semantic retrieval through an explicit embedding pipeline with model metadata.
+- Support semantic retrieval through an explicit embedding pipeline with provider and model metadata.
 - Support hybrid retrieval that fuses lexical and vector results into a single ranked output.
 - Return ranked chunks with metadata and retrieval explanations suitable for agent consumption.
-- Execute a benchmark suite with golden queries and report Recall@K, MRR, NDCG@K, indexing time, and query latency in a reproducible format.
+- Execute a benchmark suite with human-authored and reviewed synthetic queries and report Recall@K, MRR, NDCG@K, indexing time, and query latency in a reproducible format.
+- Record evaluation metadata for benchmark and judge runs, including provider, model, grader version, timestamp, and evaluation configuration.
 - Support before/after benchmark comparison across retrieval strategies.
+- Keep lexical and local-only development workflows operational without requiring OpenAI or another external provider.
+- Allow optional provider-backed evaluation experiments without making those workflows mandatory for the core product.
 - Allow a new chunking strategy, embedding provider, or retrieval fusion variant to be introduced by changing a bounded subsystem rather than redesigning the entire pipeline.
 
 For the internal R&D context, success should also be measured by experiment velocity:
@@ -131,15 +141,29 @@ The MVP includes:
 - AST-aware or structure-aware chunking for each supported language.
 - A normalized chunk schema with metadata required for retrieval and embeddings.
 - A chunk store for indexed retrieval units.
-- A pluggable embedding pipeline with model version metadata.
+- A pluggable embedding pipeline with provider and model metadata.
 - A lexical index for exact and identifier-heavy search.
 - A vector index for semantic retrieval.
 - A hybrid retriever that combines lexical and vector results.
 - Agent-oriented output formatting for CLI consumption.
-- An evaluation harness with sample golden queries and measurable retrieval metrics.
+- An evaluation harness with human-authored queries, reviewed synthetic candidate queries, and measurable retrieval metrics.
+- Evaluation metadata capture for benchmark and judge runs, including provider, model, grader version, timestamp, and evaluation configuration.
+- Local-first defaults that keep lexical and local-only workflows usable without external providers.
 - CLI entrypoints for indexing, querying, and evaluation.
 
 The MVP is successful when it delivers one complete end-to-end path from repository ingestion to benchmarked hybrid retrieval.
+
+### Optional OpenAI-Enabled Evaluation Workflows
+
+The product may optionally use OpenAI within the existing provider abstraction for evaluation-focused workflows, but these workflows are not required for core local development or lexical/local-only iteration.
+
+For this PRD, grader version means the versioned judge prompt and rubric bundle used for an evaluation run.
+
+- Synthetic benchmark and evaluation dataset generation may use OpenAI to draft candidate queries, grading prompts, or adversarial cases for later human review.
+- LLM-as-a-judge retrieval grading may use OpenAI to score relevance or answer quality as an auxiliary evaluation signal.
+- Semantic retrieval experiments may use OpenAI or another external embedding provider for opt-in comparison runs.
+
+Every provider-backed workflow must require explicit opt-in through environment variables or protected local configuration, surface provider usage in runtime output, and persist evaluation metadata that makes the run inspectable and comparable.
 
 ### Growth Features (Post-MVP)
 
@@ -147,6 +171,7 @@ Post-MVP growth should focus on improving retrieval quality, experiment velocity
 
 - Better language-specific chunkers and richer parser adapters.
 - Additional embedding providers and model comparison workflows.
+- OpenAI-assisted and multi-provider judge calibration workflows.
 - More advanced hybrid fusion and reranking strategies.
 - Better retrieval explanations and result packaging for agent reasoning loops.
 - Expanded benchmark datasets and scenario-specific evaluation suites.
@@ -157,7 +182,7 @@ Post-MVP growth should focus on improving retrieval quality, experiment velocity
 
 The long-term vision is to evolve the product from a useful internal retrieval tool into a modular experimentation platform for automated retrieval optimization.
 
-In that future state, the system supports autosearch and automated mutation loops that can propose, evaluate, and compare retrieval strategy changes across chunking, embeddings, ranking, and packaging layers. The platform becomes the internal foundation for evidence-driven improvement of agent context quality, with modular subsystems that can be independently tuned, benchmarked, and promoted into stronger default retrieval strategies.
+In that future state, the system supports autosearch and automated mutation loops that can propose, evaluate, and compare retrieval strategy changes across chunking, embeddings, ranking, packaging, and judge configurations. The platform becomes the internal foundation for evidence-driven improvement of agent context quality, with modular subsystems that can be independently tuned, benchmarked, and promoted into stronger default retrieval strategies. Future growth should also support structured model-comparison workflows, judge-improvement loops, and calibration of synthetic and LLM-graded evaluation signals against human-reviewed baselines.
 
 ## User Journeys
 
@@ -193,13 +218,13 @@ The journey is successful when MCP integration becomes a reliable building block
 
 ### Journey 4: Admin / Maintainer - Configuration and Experiment Setup
 
-Iryna is responsible for maintaining the internal retrieval platform as a shared R&D asset. She does not spend most of her time searching repositories directly. Instead, she configures embedding providers, tracks model versions, manages index settings, and prepares benchmark corpora so the team can run comparable experiments.
+Iryna is responsible for maintaining the internal retrieval platform as a shared R&D asset. She does not spend most of her time searching repositories directly. Instead, she configures embedding providers, tracks model versions, manages index settings, and prepares benchmark corpora so the team can run comparable experiments. Some runs stay fully local. Other runs opt into OpenAI-backed synthetic query generation or judge workflows when the team wants broader benchmark coverage or faster grading.
 
-When the team wants to test a new embedding model or retrieval fusion strategy, Iryna updates configuration, verifies that the model metadata is stored correctly, and ensures the benchmark harness produces reproducible reports. She must be able to introduce changes without breaking the indexing pipeline or creating ambiguity about which configuration produced which results.
+When the team wants to test a new embedding model, retrieval fusion strategy, or judge configuration, Iryna updates configuration, verifies that the provider, model, and grader version metadata are stored correctly, and ensures the benchmark harness produces reproducible reports. She must be able to introduce changes without breaking the indexing pipeline or creating ambiguity about which configuration produced which results.
 
-Her highest-value moment is when a new experimental configuration can be introduced with a localized change and immediately evaluated against the shared benchmark suite. She needs operational clarity: which provider ran, which model version produced vectors, which benchmark run belongs to which experiment, and whether results are comparable.
+Her highest-value moment is when a new experimental configuration can be introduced with a localized change and immediately evaluated against the shared benchmark suite. She needs operational clarity: which provider ran, which model version produced vectors or grades, which benchmark run belongs to which experiment, whether repository data left the local machine, and whether results are comparable.
 
-The journey resolves when Iryna can support multiple experiments without turning the platform into configuration chaos. The product succeeds because maintainability and experiment traceability are built into the system design.
+The journey resolves when Iryna can support multiple experiments without turning the platform into configuration chaos. The product succeeds because maintainability, provider transparency, and experiment traceability are built into the system design.
 
 ### Journey 5: Support / Troubleshooting User - Failure Investigation
 
@@ -223,7 +248,10 @@ These journeys reveal the need for the following capability areas:
 - Phase 2 MCP workflows that reuse the same retrieval engine and output semantics as CLI.
 - Metadata-rich retrieval outputs with ranking explanations for agent consumption.
 - Benchmark harness support for reproducible runs, before/after comparisons, and regression detection.
+- Benchmark datasets that can combine human-authored queries with reviewed synthetic queries.
 - Configuration management for embedding providers, model versions, and retrieval strategies.
+- Optional provider-assisted generation and judge workflows behind explicit opt-in boundaries.
+- Evaluation metadata capture for provider, model, grader version, timestamp, and evaluation configuration.
 - Diagnostic and troubleshooting support that makes failures attributable to bounded subsystems.
 
 ## Domain-Specific Requirements
@@ -232,15 +260,17 @@ These journeys reveal the need for the following capability areas:
 
 No formal industry-specific compliance regime is required for the MVP. However, the product must support internal engineering governance for reproducibility, traceability, and safe handling of proprietary source code.
 
-The system should preserve experiment traceability by recording configuration inputs relevant to retrieval quality, including chunking strategy, embedding provider, embedding model version, index configuration, and benchmark context. If external embedding providers are used, the platform must make it explicit when repository code or metadata leaves the local environment.
+The system should preserve experiment traceability by recording configuration inputs relevant to retrieval quality, including chunking strategy, provider, model, grader version, index configuration, and benchmark context. If external providers are used for embeddings, synthetic data generation, or judge workflows, the platform must make it explicit when repository code, chunks, embeddings, or query content leave the local environment.
 
 ### Technical Constraints
 
-The product operates in an evaluation-driven AI tooling domain, so reproducibility is a first-order requirement rather than a convenience feature. Benchmark runs must be repeatable, comparable, and attributable to specific retrieval configurations.
+The product operates in an evaluation-driven AI tooling domain, so reproducibility is a first-order requirement rather than a convenience feature. Benchmark runs must be repeatable, comparable, and attributable to specific retrieval and evaluation configurations.
 
 The system must support mixed-language parsing across PHP, JavaScript, HTML, and Twig without collapsing all retrieval into naive file-level units. It must preserve structural fidelity where possible and degrade gracefully where parser coverage is weaker.
 
-Model and provider variability must be treated as a controlled constraint. Embedding outputs, query behavior, and retrieval quality may change across providers and model versions, so the platform must store model metadata and make experiment boundaries explicit.
+Model and provider variability must be treated as a controlled constraint. Embedding outputs, synthetic benchmark generation, judge behavior, and retrieval quality may change across providers and model versions, so the platform must store provider, model, grader version, and evaluation metadata and make experiment boundaries explicit.
+
+Synthetic benchmark data can improve coverage, but drafted synthetic queries are not benchmark baselines until they are reviewed, versioned, and explicitly promoted. LLM judge outputs can accelerate evaluation, but they must remain advisory signals rather than the sole source of truth.
 
 Latency and indexing cost matter, but correctness and evaluability matter more for the MVP. The system should therefore optimize first for trustworthy retrieval behavior, bounded modularity, and measurable quality, while still exposing indexing time and query latency as tracked metrics.
 
@@ -250,7 +280,7 @@ The product must integrate cleanly with local developer workflows through the CL
 
 The system must support local repository indexing as a primary use case. It should also support benchmark dataset execution and comparison workflows as first-class operations, not one-off scripts.
 
-If external embedding providers are configured, the integration model must make provider boundaries visible so users understand operational, privacy, and cost implications.
+If external providers are configured, the integration model must make provider boundaries visible so users understand operational, privacy, and cost implications. Provider-backed evaluation workflows must be explicitly enabled through environment variables or protected local configuration and must never become an implicit dependency of lexical/local-only development.
 
 ### Risk Mitigations
 
@@ -258,9 +288,13 @@ The primary domain risk is false confidence: a retrieval strategy may appear use
 
 A second risk is architectural drift, where experimentation becomes harder over time because subsystems are no longer independently swappable. This risk is mitigated through strict module boundaries and shared core services for indexing and retrieval.
 
-A third risk is hidden provider or model variance. Changes in embedding provider, model version, or indexing configuration can distort conclusions if not tracked explicitly. This risk is mitigated by configuration traceability and experiment metadata capture.
+A third risk is hidden provider or model variance. Changes in embedding provider, model version, grader version, or indexing configuration can distort conclusions if not tracked explicitly. This risk is mitigated by configuration traceability and experiment metadata capture.
 
-A fourth risk is unsafe handling of proprietary repository contents when using external services. This risk is mitigated by making provider usage explicit and keeping local-first workflows viable for the MVP.
+A fourth risk is unsafe handling of proprietary repository contents when using external services. This risk is mitigated by making provider usage explicit, requiring opt-in configuration, and keeping local-first workflows viable for the MVP.
+
+A fifth risk is over-trusting synthetic benchmarks or LLM judges. Synthetic data can mirror provider bias, and grader outputs can drift or disagree with human review. This risk is mitigated by mandatory human review before baseline promotion, versioned benchmark datasets, and treating judge outputs as one evaluation signal rather than final truth.
+
+A sixth risk is uncontrolled cost growth in provider-backed experiments. This risk is mitigated by runtime visibility into provider-backed workflows, experiment metadata that supports spend attribution, and the ability to stay fully local when external-provider comparisons are not justified.
 
 ## Innovation & Novel Patterns
 
@@ -290,10 +324,12 @@ Validation should focus on the following questions:
 
 - Does AST-aware and structure-aware chunking outperform naive chunking on the target benchmark set?
 - Does hybrid retrieval outperform lexical-only and vector-only baselines on mixed-stack repositories?
+- Do reviewed synthetic benchmark queries improve coverage without weakening benchmark trust?
+- Do LLM-as-a-judge workflows correlate strongly enough with human review to justify their use as an auxiliary grading signal?
 - Do agent-oriented retrieval packages improve downstream usefulness compared with raw ranked matches?
 - Does the modular architecture reduce the cost of introducing and evaluating new retrieval strategies?
 
-Validation should rely on reproducible benchmark runs with golden queries, standard retrieval metrics such as Recall@K, MRR, and NDCG@K, and explicit before/after comparisons across retrieval strategies. Innovation is only real if it produces measurable improvement or materially improves experimental velocity.
+Validation should rely on reproducible benchmark runs with human-authored and reviewed synthetic queries, standard retrieval metrics such as Recall@K, MRR, and NDCG@K, optional judge outputs recorded as separate signals, and explicit before/after comparisons across retrieval strategies. Innovation is only real if it produces measurable improvement or materially improves experimental velocity.
 
 ### Risk Mitigation
 
@@ -303,7 +339,9 @@ A second risk is over-architecting for future optimization before the MVP proves
 
 A third risk is fragmented product behavior across interfaces. If CLI and MCP evolve differently, the innovation claim weakens because the system stops being a unified retrieval core. This risk should be mitigated by shared services and common evaluation paths.
 
-A fourth risk is complexity without adoption inside the team. If the product becomes too hard to configure, benchmark, or extend, its value as an internal R&D platform declines. This risk should be mitigated through bounded module design, explicit configuration metadata, and reproducible evaluation workflows.
+A fourth risk is judge inconsistency hidden behind automation. If provider-backed grading appears authoritative without calibration, the product can create false confidence. This risk should be mitigated by recording grader versions, comparing judge outputs against human-reviewed baselines, and keeping judge scores separate from canonical benchmark labels.
+
+A fifth risk is complexity without adoption inside the team. If the product becomes too hard to configure, benchmark, or extend, its value as an internal R&D platform declines. This risk should be mitigated through bounded module design, explicit configuration metadata, and reproducible evaluation workflows.
 
 ## Developer Tool Specific Requirements
 
@@ -315,9 +353,9 @@ The tool is optimized for internal R&D usage rather than public package adoption
 
 ### Technical Architecture Considerations
 
-The architecture should preserve a strict separation between the CLI entrypoints and the retrieval core. The CLI is the operational surface, but indexing, chunking, embeddings, lexical retrieval, vector retrieval, hybrid fusion, and evaluation must live in reusable internal modules rather than being embedded directly in command handlers.
+The architecture should preserve a strict separation between the CLI entrypoints and the retrieval core. The CLI is the operational surface, but indexing, chunking, embeddings, lexical retrieval, vector retrieval, hybrid fusion, and evaluation must live in reusable internal modules rather than being embedded directly in command handlers. Provider-backed evaluation workflows, including OpenAI-backed synthetic data generation and judge runs, must cross explicit boundaries instead of being woven invisibly into local execution paths.
 
-Because this is a developer tool, operational clarity matters as much as functionality. Commands should be deterministic, scriptable, and suitable for repeated experimental workflows. The system should prioritize inspectability, reproducibility, and bounded extensibility over UX polish or broad interface coverage in the MVP.
+Because this is a developer tool, operational clarity matters as much as functionality. Commands should be deterministic, scriptable, and suitable for repeated experimental workflows. The system should prioritize inspectability, reproducibility, provider transparency, and bounded extensibility over UX polish or broad interface coverage in the MVP.
 
 MCP and IDE integration are not part of the MVP project-type surface. If introduced later, they should be layered on top of the same internal retrieval services rather than creating parallel execution paths.
 
@@ -365,6 +403,7 @@ The CLI surface should cover the core operational workflows:
 - semantic search;
 - hybrid retrieval;
 - benchmark execution;
+- optional synthetic benchmark generation and judge workflows;
 - experiment comparison or evaluation reporting.
 
 Phase 2 introduces MCP as an additional interface layer built on top of the same internal retrieval services.
@@ -386,8 +425,9 @@ Required documentation should include:
 - project overview and purpose;
 - uv-based setup and execution instructions;
 - CLI command reference for indexing, querying, and evaluation;
-- configuration guidance for embedding providers and model metadata;
+- configuration guidance for providers, model metadata, grader versions, and opt-in boundaries;
 - benchmark workflow documentation;
+- privacy, secret-handling, and cost-awareness guidance for provider-backed workflows;
 - architecture notes describing module boundaries and future extension points.
 
 Documentation should prioritize operational clarity over marketing or onboarding polish.
@@ -409,10 +449,11 @@ Implementation choices should reinforce the tool's role as an internal experimen
 - commands should be easy to script and rerun;
 - configurations should be explicit and traceable;
 - benchmark outputs should be reproducible;
+- provider-backed workflows should remain opt-in, visible, and bounded;
 - subsystem boundaries should support future interface expansion without redesign;
 - CLI behavior should remain consistent across indexing, retrieval, and evaluation workflows.
 
-The product should optimize for reliability of experimentation, ease of comparison, and maintainability of the retrieval core rather than breadth of distribution or end-user ecosystem integration.
+The product should optimize for reliability of experimentation, ease of comparison, maintainability of the retrieval core, and the ability to remain fully useful without OpenAI rather than breadth of distribution or end-user ecosystem integration.
 
 ## Project Scoping & Phased Development
 
@@ -421,6 +462,8 @@ The product should optimize for reliability of experimentation, ease of comparis
 **MVP Approach:** Problem-solving platform MVP for internal R&D.
 
 The MVP is not intended to maximize interface breadth or ecosystem reach. Its purpose is to establish a trustworthy end-to-end retrieval baseline for mixed-stack repositories and create a repeatable environment for evaluating retrieval strategies.
+
+The MVP must remain local-first by default. Optional OpenAI-backed workflows are permitted only where they improve evaluation quality or experiment velocity, and they must not become prerequisites for indexing, lexical retrieval, or other core local development paths.
 
 The MVP should prove three things:
 
@@ -450,7 +493,10 @@ The MVP should prove three things:
 - Vector retrieval.
 - Hybrid retrieval fusion.
 - CLI commands for indexing, searching, and evaluation.
-- Benchmark harness with golden queries and reproducible metric reporting.
+- Benchmark harness with human-authored queries, reviewed synthetic candidate queries, and reproducible metric reporting.
+- Evaluation metadata capture for provider, model, grader version, timestamp, and evaluation configuration.
+- Explicit opt-in boundaries for any workflow that sends repository content, chunks, embeddings, or query content to an external provider.
+- A usable lexical/local-only development path that does not require OpenAI.
 - Internal architecture notes for future extension.
 
 **Explicitly Out of MVP:**
@@ -463,6 +509,15 @@ The MVP should prove three things:
 - Automated mutation or autosearch engine.
 - Advanced reranking and broad language expansion beyond the initial set.
 
+### MVP Acceptance Criteria
+
+- A maintainer can index a repository, run lexical retrieval, and execute baseline benchmark workflows without configuring OpenAI or another external provider.
+- Benchmark datasets can contain both human-authored queries and synthetic candidate queries, but synthetic data only becomes a benchmark baseline after human review, versioning, and explicit promotion.
+- Any benchmark or judge run that uses an external provider records provider, model, grader version, timestamp, and evaluation configuration in experiment metadata.
+- Runtime output makes provider-backed workflow usage visible before or during execution so operators can understand privacy and cost implications.
+- Secrets for provider-backed workflows are supplied through environment variables or protected local configuration and are never stored in source control or benchmark artifacts.
+- LLM judge outputs are available for comparison, but benchmark conclusions do not rely on judge outputs as the sole source of truth.
+
 ### Post-MVP Features
 
 **Phase 2 (Post-MVP):**
@@ -470,6 +525,7 @@ The MVP should prove three things:
 - MCP interface built on the same retrieval core.
 - Improved retrieval packaging for agent workflows.
 - Additional embedding providers and comparison workflows.
+- Cross-provider model-comparison workflows for embeddings and judges.
 - Better hybrid fusion and reranking strategies.
 - Expanded benchmark datasets and regression suites.
 - More robust diagnostics and experiment management.
@@ -478,6 +534,7 @@ The MVP should prove three things:
 
 - Automated retrieval optimization loops.
 - Mutation-driven experimentation across chunking, embeddings, and ranking.
+- Judge-improvement loops, calibration studies, and ensemble grading experiments.
 - Broader repository and language support.
 - More advanced evaluation scenarios tied to downstream agent task performance.
 - Platform-level orchestration for large-scale retrieval experimentation.
@@ -485,13 +542,13 @@ The MVP should prove three things:
 ### Risk Mitigation Strategy
 
 **Technical Risks:**  
-The biggest technical risks are parser quality variance, low retrieval quality despite architectural effort, and overbuilding abstractions before the MVP proves useful. Mitigation: deliver one end-to-end CLI workflow first, benchmark against simple baselines, and keep module boundaries strict but minimal.
+The biggest technical risks are parser quality variance, low retrieval quality despite architectural effort, overbuilding abstractions before the MVP proves useful, and hidden variance in provider-backed evaluation workflows. Mitigation: deliver one end-to-end CLI workflow first, benchmark against simple baselines, keep module boundaries strict but minimal, and record provider, model, grader version, and evaluation configuration for any external-provider run.
 
 **Market Risks:**  
-The main product risk is solving an interesting technical problem without producing a tool the internal team actually uses. Mitigation: optimize the MVP around real retrieval tasks, benchmark evidence, and repeatable experiments rather than architectural elegance alone.
+The main product risk is solving an interesting technical problem without producing a tool the internal team actually uses. Mitigation: optimize the MVP around real retrieval tasks, benchmark evidence, repeatable experiments, and a strong no-provider local path rather than architectural elegance alone.
 
 **Resource Risks:**  
-The main resource risk is trying to deliver too many interfaces and extension points too early. Mitigation: keep Phase 1 CLI-only, defer MCP to Phase 2, avoid sample asset overhead, and constrain the first release to the smallest useful experiment platform.
+The main resource risk is trying to deliver too many interfaces and extension points too early. Mitigation: keep Phase 1 CLI-only, defer MCP to Phase 2, avoid sample asset overhead, constrain the first release to the smallest useful experiment platform, and keep OpenAI-enabled evaluation support optional rather than turning it into a mandatory platform dependency.
 
 ## Functional Requirements
 
@@ -517,32 +574,37 @@ The main resource risk is trying to deliver too many interfaces and extension po
 
 - FR13: Maintainers can configure retrieval-related components used by the system.
 - FR14: Maintainers can configure embedding-related settings independently from other indexing settings.
-- FR15: Maintainers can configure retrieval strategies and experiment variants without redefining the entire system.
-- FR16: Maintainers can identify which configuration was used for a specific indexing or retrieval run.
-- FR17: Maintainers can reuse previously defined retrieval configurations in later experiments.
+- FR15: Maintainers can configure provider-backed evaluation workflows independently from local-only workflows and keep them disabled by default.
+- FR16: Maintainers can configure retrieval strategies and experiment variants without redefining the entire system.
+- FR17: Maintainers can identify which configuration was used for a specific indexing, retrieval, benchmark, or judge run.
+- FR18: Maintainers can reuse previously defined retrieval configurations in later experiments.
 
 ### Evaluation & Benchmarking
 
-- FR18: Internal engineers can execute benchmark runs against indexed repositories.
-- FR19: Internal engineers can evaluate retrieval behavior using golden-query test cases.
-- FR20: Internal engineers can review benchmark outputs for a retrieval configuration.
-- FR21: Internal engineers can compare benchmark results across retrieval strategies.
-- FR22: Internal engineers can identify retrieval regressions between experiment runs.
-- FR23: Internal engineers can associate benchmark results with the retrieval configuration that produced them.
+- FR19: Internal engineers can execute benchmark runs against indexed repositories.
+- FR20: Internal engineers can evaluate retrieval behavior using benchmark datasets that include human-authored queries and reviewed synthetic queries.
+- FR21: Internal engineers can generate draft synthetic benchmark or evaluation queries through an optional provider-backed workflow.
+- FR22: Internal engineers can review, revise, version, and promote synthetic data before it becomes a benchmark baseline.
+- FR23: Internal engineers can review benchmark outputs for a retrieval configuration.
+- FR24: Internal engineers can optionally run LLM-as-a-judge or grader workflows to score retrieval quality.
+- FR25: Internal engineers can review judge outputs alongside standard retrieval metrics without treating judge outputs as the sole source of truth.
+- FR26: Internal engineers can compare benchmark results across retrieval strategies, providers, models, and grader configurations.
+- FR27: Internal engineers can identify retrieval regressions between experiment runs.
+- FR28: Internal engineers can associate benchmark results with the retrieval configuration and evaluation metadata that produced them.
 
 ### CLI Operations & Troubleshooting
 
-- FR24: Internal engineers can execute core indexing, retrieval, and evaluation workflows through the CLI.
-- FR25: Internal engineers can use the CLI in repeated experimental workflows without requiring manual system reconfiguration each time.
-- FR26: Maintainers can diagnose failed indexing runs.
-- FR27: Maintainers can diagnose failed retrieval or evaluation runs.
-- FR28: Maintainers can identify which subsystem is most likely responsible for a failed or degraded run.
+- FR29: Internal engineers can execute core indexing, retrieval, and evaluation workflows through the CLI.
+- FR30: Internal engineers can use the CLI in repeated experimental workflows without requiring manual system reconfiguration each time.
+- FR31: Maintainers can diagnose failed indexing runs.
+- FR32: Maintainers can diagnose failed retrieval or evaluation runs.
+- FR33: Maintainers can identify which subsystem is most likely responsible for a failed or degraded run.
 
 ### Future Interface Expansion
 
-- FR29: Phase 2 users can access retrieval workflows through an MCP interface.
-- FR30: Phase 2 users can receive retrieval outputs through MCP that are consistent with the core retrieval behavior established by the CLI.
-- FR31: Future interfaces can reuse the same retrieval capabilities without redefining core indexing and retrieval behavior.
+- FR34: Phase 2 users can access retrieval workflows through an MCP interface.
+- FR35: Phase 2 users can receive retrieval outputs through MCP that are consistent with the core retrieval behavior established by the CLI.
+- FR36: Future interfaces can reuse the same retrieval capabilities without redefining core indexing and retrieval behavior.
 
 ## Non-Functional Requirements
 
@@ -556,29 +618,35 @@ The main resource risk is trying to deliver too many interfaces and extension po
 ### Security & Data Handling
 
 - NFR5: Repository contents and derived retrieval artifacts shall remain local by default.
-- NFR6: The system shall not send repository code, chunk content, embeddings, or query content to external providers unless an external provider is explicitly configured for that workflow.
-- NFR7: When an external embedding provider is used, the system shall make that provider usage visible to the operator in configuration or runtime output.
-- NFR8: Secrets required for provider access shall not be hard-coded in source control and shall be supplied through environment variables, secure configuration, or equivalent protected mechanisms.
-- NFR9: Diagnostic output shall avoid exposing full repository contents by default, except where an explicit debug mode is enabled.
+- NFR6: The system shall support lexical and other local-only development workflows without requiring OpenAI or another external provider.
+- NFR7: The system shall not send repository code, chunk content, embeddings, or query content to external providers unless an external provider is explicitly configured for that workflow.
+- NFR8: When an external provider is used for embeddings, synthetic data generation, or judge workflows, the system shall make that provider usage visible to the operator in configuration or runtime output.
+- NFR9: Secrets required for provider access shall not be hard-coded in source control and shall be supplied through environment variables, protected local configuration, or equivalent protected mechanisms.
+- NFR10: Diagnostic output shall avoid exposing full repository contents by default, except where an explicit debug mode is enabled.
+- NFR11: Provider-backed workflows shall surface usage counters, request counts, or other cost-relevant signals when available so operators can reason about spend before comparing runs.
 
 ### Reliability & Reproducibility
 
-- NFR10: Given the same repository revision, configuration, and benchmark dataset, repeated benchmark runs shall be reproducible and attributable to the same experiment context.
-- NFR11: Every indexing, query, and benchmark run shall capture sufficient metadata to identify the repository input, retrieval configuration, embedding provider, model version, and execution timestamp.
-- NFR12: CLI workflows shall produce clear success and failure outcomes, including non-zero exit behavior for failed operational runs.
-- NFR13: Failures in indexing, retrieval, and evaluation workflows shall return actionable diagnostic information that helps identify the affected subsystem.
-- NFR14: Benchmark outputs shall support regression detection across retrieval strategies and experiment runs.
+- NFR12: Given the same repository revision, configuration, and benchmark dataset version, repeated benchmark runs shall be reproducible and attributable to the same experiment context.
+- NFR13: Benchmark datasets shall support version identifiers for human-authored queries and synthetic queries promoted into baselines.
+- NFR14: Synthetic benchmark data shall be reviewed and versioned before it is used as a comparison baseline.
+- NFR15: Every indexing, query, benchmark, and judge run shall capture sufficient evaluation metadata to identify the repository input, retrieval configuration, provider, model, grader version, and execution timestamp.
+- NFR16: LLM judge outputs shall be stored as a separate evaluation signal so human review and standard retrieval metrics remain comparable across runs.
+- NFR17: Benchmark outputs shall support regression detection across retrieval strategies, providers, models, and judge configurations.
+- NFR18: CLI workflows shall produce clear success and failure outcomes, including non-zero exit behavior for failed operational runs.
+- NFR19: Failures in indexing, retrieval, and evaluation workflows shall return actionable diagnostic information that helps identify the affected subsystem.
 
 ### Maintainability & Extensibility
 
-- NFR15: The system shall preserve bounded module responsibilities for repository snapshotting, parsing, chunking, embeddings, lexical retrieval, vector retrieval, fusion, output formatting, and evaluation.
-- NFR16: Introducing a new chunking strategy, embedding provider, or retrieval fusion variant shall require localized changes rather than cross-system rewrites.
-- NFR17: CLI command handlers shall rely on shared internal services so retrieval logic is not duplicated across operational entrypoints.
-- NFR18: Architecture and configuration boundaries shall be documented clearly enough that internal engineers can extend the system without reverse-engineering core workflows.
+- NFR20: The system shall preserve bounded module responsibilities for repository snapshotting, parsing, chunking, embeddings, lexical retrieval, vector retrieval, fusion, output formatting, and evaluation.
+- NFR21: Introducing a new chunking strategy, embedding provider, judge workflow, or retrieval fusion variant shall require localized changes rather than cross-system rewrites.
+- NFR22: CLI command handlers shall rely on shared internal services so retrieval logic is not duplicated across operational entrypoints.
+- NFR23: Architecture and configuration boundaries shall be documented clearly enough that internal engineers can extend the system without reverse-engineering core workflows.
 
 ### Integration & Interface Consistency
 
-- NFR19: The MVP shall provide a stable CLI interface for indexing, retrieval, and evaluation workflows.
-- NFR20: CLI behavior shall remain scriptable and deterministic enough to support repeated internal experimentation workflows.
-- NFR21: Phase 2 MCP integration shall reuse the same core retrieval services and retrieval semantics established by the CLI baseline.
-- NFR22: Future interfaces shall not require redefining indexing, retrieval, or evaluation behavior already implemented in the core platform.
+- NFR24: The MVP shall provide a stable CLI interface for indexing, retrieval, and evaluation workflows.
+- NFR25: CLI behavior shall remain scriptable and deterministic enough to support repeated internal experimentation workflows.
+- NFR26: External-provider integrations shall preserve provider abstraction so OpenAI support does not overfit the product to a single vendor.
+- NFR27: Phase 2 MCP integration shall reuse the same core retrieval services and retrieval semantics established by the CLI baseline.
+- NFR28: Future interfaces shall not require redefining indexing, retrieval, or evaluation behavior already implemented in the core platform.

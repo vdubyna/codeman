@@ -1,5 +1,11 @@
 # CLI Reference
 
+This document owns supported CLI syntax and output contracts.
+
+- For agent implementation rules, see [`project-context.md`](project-context.md).
+- For benchmark and evaluation policy, see [`benchmarks.md`](benchmarks.md).
+- For architecture intent and extension boundaries, see [`architecture/decisions.md`](architecture/decisions.md) and [`architecture/patterns.md`](architecture/patterns.md).
+
 ## Repository Commands
 
 ```bash
