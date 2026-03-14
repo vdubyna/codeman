@@ -109,6 +109,10 @@ class ExtractSourceFilesUseCase:
             persisted_files = self.source_inventory_store.upsert_source_files(
                 scan_result.source_files,
             )
+            self.snapshot_store.mark_source_inventory_extracted(
+                snapshot_id=snapshot.snapshot_id,
+                extracted_at=discovered_at,
+            )
         except ExtractSourceFilesError:
             raise
         except Exception as exc:

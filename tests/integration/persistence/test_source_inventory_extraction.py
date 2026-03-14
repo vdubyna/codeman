@@ -68,9 +68,10 @@ def test_extract_source_files_creates_source_inventory_rows_via_alembic(
     ).fetchall()
 
     assert "source_files" in tables
-    assert result.diagnostics.persisted_total == 4
+    assert result.diagnostics.persisted_total == 5
     assert rows == [
         (snapshot.snapshot.snapshot_id, "assets/app.js", "javascript"),
+        (snapshot.snapshot.snapshot_id, "assets/broken.js", "javascript"),
         (snapshot.snapshot.snapshot_id, "public/index.html", "html"),
         (snapshot.snapshot.snapshot_id, "src/Controller/HomeController.php", "php"),
         (snapshot.snapshot.snapshot_id, "templates/page.html.twig", "twig"),
@@ -105,9 +106,9 @@ def test_extract_source_files_does_not_duplicate_rows_for_same_snapshot(
         "SELECT COUNT(*) FROM source_files",
     ).fetchone()[0]
 
-    assert first.diagnostics.persisted_total == 4
-    assert second.diagnostics.persisted_total == 4
-    assert row_count == 4
+    assert first.diagnostics.persisted_total == 5
+    assert second.diagnostics.persisted_total == 5
+    assert row_count == 5
 
 
 def test_extract_source_files_skips_gitignored_supported_files(

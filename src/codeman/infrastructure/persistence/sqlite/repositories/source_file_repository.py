@@ -72,6 +72,22 @@ class SqliteSourceInventoryStore(SourceInventoryStorePort):
 
         return [self._row_to_record(row) for row in rows]
 
+    def list_by_snapshot(self, snapshot_id: str) -> list[SourceFileRecord]:
+        """Return persisted source-file rows for a snapshot ordered by path."""
+
+        if not self.database_path.exists():
+            return []
+
+        query = (
+            select(source_files_table)
+            .where(source_files_table.c.snapshot_id == snapshot_id)
+            .order_by(source_files_table.c.relative_path.asc())
+        )
+        with self.engine.begin() as connection:
+            rows = connection.execute(query).mappings().all()
+
+        return [self._row_to_record(row) for row in rows]
+
     @staticmethod
     def _row_to_record(row: Any) -> SourceFileRecord:
         """Convert a row mapping into a source-file contract DTO."""

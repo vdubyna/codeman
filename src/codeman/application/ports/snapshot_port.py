@@ -45,3 +45,11 @@ class SnapshotMetadataStorePort(Protocol):
         created_at: datetime,
     ) -> SnapshotRecord:
         """Persist immutable snapshot metadata."""
+
+    def mark_source_inventory_extracted(
+        self,
+        *,
+        snapshot_id: str,
+        extracted_at: datetime,
+    ) -> None:
+        """Record that source inventory extraction completed for a snapshot."""

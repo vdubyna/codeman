@@ -14,7 +14,7 @@ FIXTURE_REPOSITORY = (
 )
 
 
-def test_uv_run_index_extract_sources_supports_text_and_json_output(
+def test_uv_run_index_build_chunks_supports_text_and_json_output(
     tmp_path: Path,
 ) -> None:
     project_root = Path(__file__).resolve().parents[2]
@@ -66,22 +66,7 @@ def test_uv_run_index_extract_sources_supports_text_and_json_output(
     )
     snapshot_payload = json.loads(snapshot_result.stdout)
 
-    text_result = subprocess.run(
-        [
-            "uv",
-            "run",
-            "codeman",
-            "index",
-            "extract-sources",
-            snapshot_payload["data"]["snapshot"]["snapshot_id"],
-        ],
-        capture_output=True,
-        check=False,
-        text=True,
-        cwd=project_root,
-        env=env,
-    )
-    json_result = subprocess.run(
+    extract_result = subprocess.run(
         [
             "uv",
             "run",
@@ -99,19 +84,57 @@ def test_uv_run_index_extract_sources_supports_text_and_json_output(
         env=env,
     )
 
+    text_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "index",
+            "build-chunks",
+            snapshot_payload["data"]["snapshot"]["snapshot_id"],
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+    json_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "index",
+            "build-chunks",
+            snapshot_payload["data"]["snapshot"]["snapshot_id"],
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+
     payload = json.loads(json_result.stdout)
 
     assert register_result.returncode == 0, register_result.stderr
     assert snapshot_result.returncode == 0, snapshot_result.stderr
+    assert extract_result.returncode == 0, extract_result.stderr
     assert text_result.returncode == 0, text_result.stderr
     assert json_result.returncode == 0, json_result.stderr
-    assert "Extracted source inventory: 5 files" in text_result.stdout
-    assert "Persisted by language: html=1, javascript=2, php=1, twig=1" in text_result.stdout
+    assert "Generated retrieval chunks: 8 chunks" in text_result.stdout
+    assert "Files using fallback: 1" in text_result.stdout
     assert payload["ok"] is True
-    assert payload["data"]["diagnostics"]["persisted_total"] == 5
-    assert payload["data"]["diagnostics"]["skipped_by_reason"] == {
-        "binary": 1,
-        "ignored": 1,
-        "unsupported_extension": 1,
+    assert payload["data"]["diagnostics"]["total_chunks"] == 8
+    assert payload["data"]["diagnostics"]["fallback_file_count"] == 1
+    assert payload["data"]["diagnostics"]["chunks_by_strategy"] == {
+        "html_structure": 2,
+        "javascript_fallback": 1,
+        "javascript_structure": 1,
+        "php_structure": 2,
+        "twig_structure": 2,
     }
-    assert json_result.stderr == ""
+    assert "Generating chunks for snapshot" in text_result.stderr
+    assert "Generating chunks for snapshot" in json_result.stderr

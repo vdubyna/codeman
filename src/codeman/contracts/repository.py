@@ -61,6 +61,7 @@ class SnapshotRecord(BaseModel):
     revision_source: Literal["git", "filesystem_fingerprint"]
     manifest_path: Path
     created_at: datetime
+    source_inventory_extracted_at: datetime | None = None
 
 
 class SnapshotManifestDocument(BaseModel):

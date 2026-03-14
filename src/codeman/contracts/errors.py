@@ -41,4 +41,6 @@ class ErrorCode:
     SNAPSHOT_SOURCE_MISMATCH = "snapshot_source_mismatch"
     SNAPSHOT_CREATION_FAILED = "snapshot_creation_failed"
     SOURCE_EXTRACTION_FAILED = "source_extraction_failed"
+    SOURCE_INVENTORY_MISSING = "source_inventory_missing"
+    CHUNK_GENERATION_FAILED = "chunk_generation_failed"
     INTERNAL_ERROR = "internal_error"

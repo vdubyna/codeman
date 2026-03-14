@@ -36,6 +36,8 @@ class FakeRepositoryStore:
 class FakeSnapshotStore:
     snapshot: SnapshotRecord | None
     initialized: int = 0
+    marked_snapshot_id: str | None = None
+    marked_extracted_at: datetime | None = None
 
     def initialize(self) -> None:
         self.initialized += 1
@@ -44,6 +46,15 @@ class FakeSnapshotStore:
         if self.snapshot is None or self.snapshot.snapshot_id != snapshot_id:
             return None
         return self.snapshot
+
+    def mark_source_inventory_extracted(
+        self,
+        *,
+        snapshot_id: str,
+        extracted_at: datetime,
+    ) -> None:
+        self.marked_snapshot_id = snapshot_id
+        self.marked_extracted_at = extracted_at
 
 
 @dataclass
@@ -187,6 +198,8 @@ def test_extract_source_files_returns_persisted_inventory_and_diagnostics(
     assert revision_resolver.seen_paths == [repository_path.resolve()]
     assert scanner.seen_paths == [repository_path.resolve()]
     assert source_inventory_store.persisted is not None
+    assert use_case.snapshot_store.marked_snapshot_id == snapshot.snapshot_id
+    assert use_case.snapshot_store.marked_extracted_at is not None
     assert result.diagnostics.persisted_total == 2
     assert result.diagnostics.persisted_by_language == {
         "javascript": 1,

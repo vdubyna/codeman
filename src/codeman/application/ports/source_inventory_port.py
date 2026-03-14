@@ -43,3 +43,6 @@ class SourceInventoryStorePort(Protocol):
         source_files: Sequence[SourceFileRecord],
     ) -> list[SourceFileRecord]:
         """Persist source-file rows without duplicating the same snapshot/path pair."""
+
+    def list_by_snapshot(self, snapshot_id: str) -> list[SourceFileRecord]:
+        """Return persisted source-file rows for a snapshot ordered by relative path."""

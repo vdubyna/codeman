@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import typer
 
+from codeman.application.indexing.build_chunks import BuildChunksError
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesError
 from codeman.bootstrap import BootstrapContainer
 from codeman.cli.common import OutputFormat, build_command_meta, emit_json_response
+from codeman.contracts.chunking import BuildChunksRequest
 from codeman.contracts.common import SuccessEnvelope
 from codeman.contracts.errors import ErrorDetail, FailureEnvelope
 from codeman.contracts.repository import ExtractSourceFilesRequest
@@ -26,6 +28,26 @@ def _handle_extract_sources_error(
     command_name: str,
 ) -> None:
     """Render extraction failures in the requested output format."""
+
+    envelope = FailureEnvelope(
+        error=ErrorDetail(code=error.error_code, message=error.message),
+        meta=build_command_meta(command_name, output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+    else:
+        typer.secho(error.message, err=True, fg=typer.colors.RED)
+
+    raise typer.Exit(code=error.exit_code)
+
+
+def _handle_build_chunks_error(
+    *,
+    error: BuildChunksError,
+    output_format: OutputFormat,
+    command_name: str,
+) -> None:
+    """Render chunk-generation failures in the requested output format."""
 
     envelope = FailureEnvelope(
         error=ErrorDetail(code=error.error_code, message=error.message),
@@ -88,3 +110,61 @@ def extract_sources(
             ]
         )
     )
+
+
+@app.command("build-chunks")
+def build_chunks(
+    ctx: typer.Context,
+    snapshot_id: str,
+    output_format: OutputFormat = typer.Option(OutputFormat.TEXT, "--output-format"),
+) -> None:
+    """Generate retrieval chunks for a previously extracted snapshot inventory."""
+
+    from codeman.cli.app import get_container
+
+    typer.echo(f"Generating chunks for snapshot: {snapshot_id}", err=True)
+    container: BootstrapContainer = get_container(ctx)
+    try:
+        result = container.build_chunks.execute(
+            BuildChunksRequest(snapshot_id=snapshot_id),
+        )
+    except BuildChunksError as error:
+        _handle_build_chunks_error(
+            error=error,
+            output_format=output_format,
+            command_name="index.build-chunks",
+        )
+
+    envelope = SuccessEnvelope(
+        data=result,
+        meta=build_command_meta("index.build-chunks", output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+        return
+
+    chunks_by_language = ", ".join(
+        f"{language}={count}"
+        for language, count in result.diagnostics.chunks_by_language.items()
+    ) or "none"
+    chunks_by_strategy = ", ".join(
+        f"{strategy}={count}"
+        for strategy, count in result.diagnostics.chunks_by_strategy.items()
+    ) or "none"
+    fallback_paths = [
+        diagnostic.relative_path
+        for diagnostic in result.diagnostics.file_diagnostics
+        if diagnostic.mode == "fallback"
+    ]
+    lines = [
+        f"Generated retrieval chunks: {result.diagnostics.total_chunks} chunks",
+        f"Snapshot ID: {result.snapshot.snapshot_id}",
+        f"Repository ID: {result.repository.repository_id}",
+        f"Chunks by language: {chunks_by_language}",
+        f"Chunks by strategy: {chunks_by_strategy}",
+        f"Files using fallback: {result.diagnostics.fallback_file_count}",
+        f"Skipped files: {result.diagnostics.skipped_file_count}",
+    ]
+    if fallback_paths:
+        lines.append(f"Fallback paths: {', '.join(fallback_paths)}")
+    typer.echo("\n".join(lines))

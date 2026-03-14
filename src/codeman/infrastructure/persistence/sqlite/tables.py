@@ -35,6 +35,7 @@ snapshots_table = Table(
     Column("revision_source", String(length=64), nullable=False),
     Column("manifest_path", String(length=2048), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("source_inventory_extracted_at", DateTime(timezone=True), nullable=True),
 )
 
 source_files_table = Table(
@@ -53,4 +54,24 @@ source_files_table = Table(
         "relative_path",
         name="uq_source_files_snapshot_relative_path",
     ),
+)
+
+chunks_table = Table(
+    "chunks",
+    metadata,
+    Column("id", String(length=64), primary_key=True),
+    Column("snapshot_id", String(length=32), ForeignKey("snapshots.id"), nullable=False),
+    Column("repository_id", String(length=32), ForeignKey("repositories.id"), nullable=False),
+    Column("source_file_id", String(length=64), ForeignKey("source_files.id"), nullable=False),
+    Column("relative_path", String(length=2048), nullable=False),
+    Column("language", String(length=32), nullable=False),
+    Column("strategy", String(length=64), nullable=False),
+    Column("serialization_version", String(length=16), nullable=False),
+    Column("source_content_hash", String(length=64), nullable=False),
+    Column("start_line", Integer(), nullable=False),
+    Column("end_line", Integer(), nullable=False),
+    Column("start_byte", Integer(), nullable=False),
+    Column("end_byte", Integer(), nullable=False),
+    Column("payload_path", String(length=2048), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
 )

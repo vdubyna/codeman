@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.engine import Engine
 
 from codeman.application.ports.snapshot_port import SnapshotMetadataStorePort
@@ -62,6 +62,7 @@ class SqliteSnapshotMetadataStore(SnapshotMetadataStorePort):
             revision_source=revision_source,
             manifest_path=str(manifest_path),
             created_at=created_at,
+            source_inventory_extracted_at=None,
         )
         with self.engine.begin() as connection:
             connection.execute(statement)
@@ -73,7 +74,24 @@ class SqliteSnapshotMetadataStore(SnapshotMetadataStorePort):
             revision_source=revision_source,
             manifest_path=manifest_path,
             created_at=created_at,
+            source_inventory_extracted_at=None,
         )
+
+    def mark_source_inventory_extracted(
+        self,
+        *,
+        snapshot_id: str,
+        extracted_at: datetime,
+    ) -> None:
+        """Record that source inventory extraction completed for a snapshot."""
+
+        statement = (
+            update(snapshots_table)
+            .where(snapshots_table.c.id == snapshot_id)
+            .values(source_inventory_extracted_at=extracted_at)
+        )
+        with self.engine.begin() as connection:
+            connection.execute(statement)
 
     @staticmethod
     def _row_to_record(row: Any) -> SnapshotRecord:
@@ -86,4 +104,5 @@ class SqliteSnapshotMetadataStore(SnapshotMetadataStorePort):
             revision_source=row["revision_source"],
             manifest_path=Path(row["manifest_path"]),
             created_at=row["created_at"],
+            source_inventory_extracted_at=row["source_inventory_extracted_at"],
         )
