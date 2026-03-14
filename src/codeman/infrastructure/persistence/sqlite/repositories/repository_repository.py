@@ -31,6 +31,21 @@ class SqliteRepositoryMetadataStore(RepositoryMetadataStorePort):
 
         upgrade_database(self.database_path)
 
+    def get_by_repository_id(self, repository_id: str) -> RepositoryRecord | None:
+        """Look up a repository by its persisted identifier."""
+
+        if not self.database_path.exists():
+            return None
+
+        query = select(repositories_table).where(repositories_table.c.id == repository_id)
+        with self.engine.begin() as connection:
+            row = connection.execute(query).mappings().first()
+
+        if row is None:
+            return None
+
+        return self._row_to_record(row)
+
     def get_by_canonical_path(self, canonical_path: Path) -> RepositoryRecord | None:
         """Look up a repository by its canonical path."""
 

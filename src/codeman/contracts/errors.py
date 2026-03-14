@@ -36,4 +36,6 @@ class ErrorCode:
     REPOSITORY_PATH_NOT_DIRECTORY = "repository_path_not_directory"
     REPOSITORY_PATH_NOT_READABLE = "repository_path_not_readable"
     REPOSITORY_ALREADY_REGISTERED = "repository_already_registered"
+    REPOSITORY_NOT_REGISTERED = "repository_not_registered"
+    SNAPSHOT_CREATION_FAILED = "snapshot_creation_failed"
     INTERNAL_ERROR = "internal_error"

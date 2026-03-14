@@ -14,6 +14,9 @@ class RepositoryMetadataStorePort(Protocol):
     def initialize(self) -> None:
         """Prepare the metadata store for use."""
 
+    def get_by_repository_id(self, repository_id: str) -> RepositoryRecord | None:
+        """Return a repository record if the identifier is registered."""
+
     def get_by_canonical_path(self, canonical_path: Path) -> RepositoryRecord | None:
         """Return a repository record if the canonical path is already registered."""
 

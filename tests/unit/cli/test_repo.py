@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from codeman.application.repo.register_repository import RepositoryPathNotReadableError
 from codeman.bootstrap import bootstrap
 from codeman.cli.app import app
+from codeman.contracts.repository import RegisterRepositoryRequest
 
 runner = CliRunner()
 
@@ -100,3 +101,45 @@ def test_repo_register_command_returns_json_failure_for_unreadable_path(
     assert payload["ok"] is False
     assert payload["error"]["code"] == "repository_path_not_readable"
     assert not (workspace / ".codeman" / "metadata.sqlite3").exists()
+
+
+def test_repo_snapshot_command_creates_snapshot_in_text_mode(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target_repo = tmp_path / "registered-repo"
+    target_repo.mkdir()
+    container = bootstrap(workspace_root=workspace)
+    registration = container.register_repository.execute(
+        RegisterRepositoryRequest(repository_path=target_repo),
+    )
+
+    result = runner.invoke(
+        app,
+        ["repo", "snapshot", registration.repository.repository_id],
+        obj=container,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Created snapshot" in result.stdout
+    assert "filesystem_fingerprint" in result.stdout
+    assert (workspace / ".codeman" / "artifacts").is_dir()
+
+
+def test_repo_snapshot_command_returns_json_failure_for_unknown_repository_id(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    result = runner.invoke(
+        app,
+        ["repo", "snapshot", "missing-repository", "--output-format", "json"],
+        obj=bootstrap(workspace_root=workspace),
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 24
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "repository_not_registered"
+    assert payload["meta"]["command"] == "repo.snapshot"
