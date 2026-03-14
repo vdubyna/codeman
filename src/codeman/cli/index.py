@@ -6,6 +6,7 @@ import typer
 
 from codeman.application.indexing.build_chunks import BuildChunksError
 from codeman.application.indexing.build_lexical_index import BuildLexicalIndexError
+from codeman.application.indexing.build_semantic_index import BuildSemanticIndexError
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesError
 from codeman.application.repo.reindex_repository import ReindexRepositoryError
 from codeman.bootstrap import BootstrapContainer
@@ -15,7 +16,7 @@ from codeman.contracts.common import SuccessEnvelope
 from codeman.contracts.errors import ErrorDetail, FailureEnvelope
 from codeman.contracts.reindexing import ReindexRepositoryRequest
 from codeman.contracts.repository import ExtractSourceFilesRequest
-from codeman.contracts.retrieval import BuildLexicalIndexRequest
+from codeman.contracts.retrieval import BuildLexicalIndexRequest, BuildSemanticIndexRequest
 
 app = typer.Typer(help="Index build and refresh commands.", no_args_is_help=True)
 
@@ -85,6 +86,30 @@ def _handle_build_lexical_error(
     raise typer.Exit(code=error.exit_code)
 
 
+def _handle_build_semantic_error(
+    *,
+    error: BuildSemanticIndexError,
+    output_format: OutputFormat,
+    command_name: str,
+) -> None:
+    """Render semantic-build failures in the requested output format."""
+
+    envelope = FailureEnvelope(
+        error=ErrorDetail(
+            code=error.error_code,
+            message=error.message,
+            details=getattr(error, "details", None),
+        ),
+        meta=build_command_meta(command_name, output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+    else:
+        typer.secho(error.message, err=True, fg=typer.colors.RED)
+
+    raise typer.Exit(code=error.exit_code)
+
+
 def _handle_reindex_error(
     *,
     error: ReindexRepositoryError,
@@ -135,14 +160,19 @@ def extract_sources(
         emit_json_response(envelope)
         return
 
-    persisted_summary = ", ".join(
-        f"{language}={count}"
-        for language, count in result.diagnostics.persisted_by_language.items()
-    ) or "none"
-    skipped_summary = ", ".join(
-        f"{reason}={count}"
-        for reason, count in result.diagnostics.skipped_by_reason.items()
-    ) or "none"
+    persisted_summary = (
+        ", ".join(
+            f"{language}={count}"
+            for language, count in result.diagnostics.persisted_by_language.items()
+        )
+        or "none"
+    )
+    skipped_summary = (
+        ", ".join(
+            f"{reason}={count}" for reason, count in result.diagnostics.skipped_by_reason.items()
+        )
+        or "none"
+    )
     typer.echo(
         "\n".join(
             [
@@ -187,14 +217,20 @@ def build_chunks(
         emit_json_response(envelope)
         return
 
-    chunks_by_language = ", ".join(
-        f"{language}={count}"
-        for language, count in result.diagnostics.chunks_by_language.items()
-    ) or "none"
-    chunks_by_strategy = ", ".join(
-        f"{strategy}={count}"
-        for strategy, count in result.diagnostics.chunks_by_strategy.items()
-    ) or "none"
+    chunks_by_language = (
+        ", ".join(
+            f"{language}={count}"
+            for language, count in result.diagnostics.chunks_by_language.items()
+        )
+        or "none"
+    )
+    chunks_by_strategy = (
+        ", ".join(
+            f"{strategy}={count}"
+            for strategy, count in result.diagnostics.chunks_by_strategy.items()
+        )
+        or "none"
+    )
     fallback_paths = [
         diagnostic.relative_path
         for diagnostic in result.diagnostics.file_diagnostics
@@ -261,6 +297,58 @@ def build_lexical(
             ]
         )
     )
+
+
+@app.command("build-semantic")
+def build_semantic(
+    ctx: typer.Context,
+    snapshot_id: str,
+    output_format: OutputFormat = typer.Option(OutputFormat.TEXT, "--output-format"),
+) -> None:
+    """Build semantic retrieval artifacts for a previously chunked snapshot."""
+
+    from codeman.cli.app import get_container
+
+    typer.echo(f"Building semantic index for snapshot: {snapshot_id}", err=True)
+    container: BootstrapContainer = get_container(ctx)
+    try:
+        result = container.build_semantic_index.execute(
+            BuildSemanticIndexRequest(snapshot_id=snapshot_id),
+        )
+    except BuildSemanticIndexError as error:
+        _handle_build_semantic_error(
+            error=error,
+            output_format=output_format,
+            command_name="index.build-semantic",
+        )
+
+    envelope = SuccessEnvelope(
+        data=result,
+        meta=build_command_meta("index.build-semantic", output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+        return
+
+    provider_mode = "external" if result.provider.is_external_provider else "local"
+    lines = [
+        f"Built semantic index: {result.diagnostics.document_count} documents",
+        f"Build ID: {result.build.build_id}",
+        f"Snapshot ID: {result.snapshot.snapshot_id}",
+        f"Repository ID: {result.repository.repository_id}",
+        f"Provider: {result.provider.provider_id} ({provider_mode})",
+        f"Model: {result.provider.model_id}@{result.provider.model_version}",
+        f"Vector engine: {result.build.vector_engine}",
+        f"Semantic config fingerprint: {result.build.semantic_config_fingerprint}",
+        f"Embedding dimension: {result.diagnostics.embedding_dimension}",
+        f"Embedding artifact: {result.diagnostics.embedding_documents_path}",
+        f"Vector index path: {result.build.artifact_path}",
+        "Refreshed existing artifact: "
+        f"{'yes' if result.diagnostics.refreshed_existing_artifact else 'no'}",
+    ]
+    if result.provider.local_model_path is not None:
+        lines.insert(6, f"Local model path: {result.provider.local_model_path}")
+    typer.echo("\n".join(lines))
 
 
 @app.command("reindex")

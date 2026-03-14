@@ -36,6 +36,28 @@ uv run codeman index build-lexical <snapshot-id> --output-format json
 ```
 
 ```bash
+uv run codeman index build-semantic <snapshot-id>
+uv run codeman index build-semantic <snapshot-id> --output-format json
+```
+
+`index build-semantic` is local-first and requires an explicit local embedding configuration.
+Set `CODEMAN_SEMANTIC_PROVIDER_ID=local-hash` and `CODEMAN_SEMANTIC_LOCAL_MODEL_PATH=/path/to/local/model`
+before running the command. `codeman` will not auto-enable OpenAI or another external provider when
+semantic indexing is requested without explicit opt-in.
+
+Text output includes:
+- Repository, snapshot, and semantic build identifiers.
+- Provider and model attribution, including whether the provider stayed local.
+- Semantic configuration fingerprint, embedding dimension, embedding artifact path, and vector index path.
+
+JSON output keeps the standard success envelope on `stdout` and returns:
+- `repository`
+- `snapshot`
+- `build`
+- `provider`
+- `diagnostics`
+
+```bash
 uv run codeman index reindex <repository-id>
 uv run codeman index reindex <repository-id> --output-format json
 ```

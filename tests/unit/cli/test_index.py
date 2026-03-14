@@ -9,6 +9,9 @@ from typer.testing import CliRunner
 from codeman.application.indexing.build_chunks import SourceInventoryMissingError
 from codeman.application.indexing.build_lexical_index import ChunkBaselineMissingError
 from codeman.application.indexing.extract_source_files import SnapshotSourceMismatchError
+from codeman.application.indexing.semantic_index_errors import (
+    EmbeddingProviderUnavailableError,
+)
 from codeman.application.repo.reindex_repository import IndexedBaselineMissingError
 from codeman.bootstrap import bootstrap
 from codeman.cli.app import app
@@ -28,8 +31,12 @@ from codeman.contracts.repository import (
 )
 from codeman.contracts.retrieval import (
     BuildLexicalIndexResult,
+    BuildSemanticIndexResult,
+    EmbeddingProviderDescriptor,
     LexicalIndexBuildDiagnostics,
     LexicalIndexBuildRecord,
+    SemanticIndexBuildDiagnostics,
+    SemanticIndexBuildRecord,
 )
 
 runner = CliRunner()
@@ -259,6 +266,81 @@ def build_lexical_result(repository_path: Path) -> BuildLexicalIndexResult:
     )
 
 
+def build_semantic_result(repository_path: Path) -> BuildSemanticIndexResult:
+    now = datetime.now(UTC)
+    repository = RepositoryRecord(
+        repository_id="repo-123",
+        repository_name=repository_path.name,
+        canonical_path=repository_path,
+        requested_path=repository_path,
+        created_at=now,
+        updated_at=now,
+    )
+    snapshot = SnapshotRecord(
+        snapshot_id="snapshot-123",
+        repository_id=repository.repository_id,
+        revision_identity="revision-abc",
+        revision_source="filesystem_fingerprint",
+        manifest_path=repository_path / "manifest.json",
+        created_at=now,
+        source_inventory_extracted_at=now,
+        chunk_generation_completed_at=now,
+        indexing_config_fingerprint="fingerprint-123",
+    )
+    return BuildSemanticIndexResult(
+        repository=repository,
+        snapshot=snapshot,
+        build=SemanticIndexBuildRecord(
+            build_id="build-semantic-123",
+            repository_id=repository.repository_id,
+            snapshot_id=snapshot.snapshot_id,
+            revision_identity=snapshot.revision_identity,
+            revision_source=snapshot.revision_source,
+            semantic_config_fingerprint="semantic-fingerprint-123",
+            provider_id="local-hash",
+            model_id="fixture-local",
+            model_version="1",
+            is_external_provider=False,
+            vector_engine="sqlite-exact",
+            document_count=2,
+            embedding_dimension=8,
+            artifact_path=(
+                repository_path
+                / ".codeman"
+                / "indexes"
+                / "vector"
+                / repository.repository_id
+                / snapshot.snapshot_id
+                / "semantic-fingerprint-123"
+                / "semantic.sqlite3"
+            ),
+            created_at=now,
+        ),
+        provider=EmbeddingProviderDescriptor(
+            provider_id="local-hash",
+            model_id="fixture-local",
+            model_version="1",
+            is_external_provider=False,
+            local_model_path=repository_path / ".local-model",
+        ),
+        diagnostics=SemanticIndexBuildDiagnostics(
+            document_count=2,
+            embedding_dimension=8,
+            embedding_documents_path=(
+                repository_path
+                / ".codeman"
+                / "artifacts"
+                / "snapshots"
+                / snapshot.snapshot_id
+                / "embeddings"
+                / "semantic-fingerprint-123"
+                / "documents.json"
+            ),
+            refreshed_existing_artifact=False,
+        ),
+    )
+
+
 def test_index_extract_sources_command_renders_text_summary(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -475,3 +557,59 @@ def test_index_build_lexical_command_returns_json_failure_for_missing_baseline(
     assert payload["ok"] is False
     assert payload["error"]["code"] == "chunk_baseline_missing"
     assert payload["meta"]["command"] == "index.build-lexical"
+
+
+def test_index_build_semantic_command_renders_text_summary(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target_repo = tmp_path / "registered-repo"
+    target_repo.mkdir()
+    container = bootstrap(workspace_root=workspace)
+
+    class StubBuildSemanticIndexUseCase:
+        def execute(self, _request: object) -> BuildSemanticIndexResult:
+            return build_semantic_result(target_repo.resolve())
+
+    container.build_semantic_index = StubBuildSemanticIndexUseCase()
+
+    result = runner.invoke(
+        app,
+        ["index", "build-semantic", "snapshot-123"],
+        obj=container,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Built semantic index: 2 documents" in result.stdout
+    assert "Provider: local-hash (local)" in result.stdout
+    assert "Vector engine: sqlite-exact" in result.stdout
+
+
+def test_index_build_semantic_command_returns_json_failure_for_missing_provider(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    container = bootstrap(workspace_root=workspace)
+
+    class StubBuildSemanticIndexUseCase:
+        def execute(self, _request: object) -> object:
+            raise EmbeddingProviderUnavailableError(
+                "Semantic indexing requires an explicit local embedding provider.",
+                details={"provider_id": None},
+            )
+
+    container.build_semantic_index = StubBuildSemanticIndexUseCase()
+
+    result = runner.invoke(
+        app,
+        ["index", "build-semantic", "snapshot-123", "--output-format", "json"],
+        obj=container,
+    )
+
+    payload = json.loads(result.stdout.splitlines()[-1])
+
+    assert result.exit_code == 37
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "embedding_provider_unavailable"
+    assert payload["error"]["details"]["provider_id"] is None
+    assert payload["meta"]["command"] == "index.build-semantic"

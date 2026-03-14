@@ -8,6 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from codeman.config.indexing import IndexingConfig
+from codeman.config.semantic_indexing import SemanticIndexingConfig
 
 
 class RuntimeConfig(BaseModel):
@@ -39,3 +40,4 @@ class AppConfig(BaseModel):
     default_output_format: str = "text"
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     indexing: IndexingConfig = Field(default_factory=IndexingConfig)
+    semantic_indexing: SemanticIndexingConfig = Field(default_factory=SemanticIndexingConfig)

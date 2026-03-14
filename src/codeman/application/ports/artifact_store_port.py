@@ -7,6 +7,7 @@ from typing import Protocol
 
 from codeman.contracts.chunking import ChunkPayloadDocument
 from codeman.contracts.repository import SnapshotManifestDocument
+from codeman.contracts.retrieval import SemanticEmbeddingArtifactDocument
 
 
 class ArtifactStorePort(Protocol):
@@ -20,3 +21,18 @@ class ArtifactStorePort(Protocol):
 
     def read_chunk_payload(self, payload_path: Path) -> ChunkPayloadDocument:
         """Load a previously persisted chunk payload artifact."""
+
+    def write_embedding_documents(
+        self,
+        artifact: SemanticEmbeddingArtifactDocument,
+        *,
+        snapshot_id: str,
+        semantic_config_fingerprint: str,
+    ) -> Path:
+        """Persist one semantic embedding artifact and return its path."""
+
+    def read_embedding_documents(
+        self,
+        artifact_path: Path,
+    ) -> SemanticEmbeddingArtifactDocument:
+        """Load a previously persisted semantic embedding artifact."""

@@ -21,6 +21,14 @@ class BuildLexicalIndexRequest(BaseModel):
     snapshot_id: str
 
 
+class BuildSemanticIndexRequest(BaseModel):
+    """Input DTO for building semantic index artifacts for a snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: str
+
+
 class LexicalIndexDocument(BaseModel):
     """Normalized lexical document passed to the lexical-index adapter."""
 
@@ -35,6 +43,78 @@ class LexicalIndexDocument(BaseModel):
     content: str
 
 
+class SemanticSourceDocument(BaseModel):
+    """Normalized source document assembled from persisted chunk artifacts only."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_id: str
+    snapshot_id: str
+    repository_id: str
+    source_file_id: str
+    relative_path: str
+    language: SourceLanguage
+    strategy: str
+    serialization_version: str = "1"
+    source_content_hash: str
+    start_line: int
+    end_line: int
+    start_byte: int
+    end_byte: int
+    content: str
+
+
+class EmbeddingProviderDescriptor(BaseModel):
+    """Stable provider/model attribution for semantic indexing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    model_id: str
+    model_version: str
+    is_external_provider: bool = False
+    local_model_path: Path | None = None
+
+
+class SemanticEmbeddingDocument(BaseModel):
+    """Embedding-ready document artifact traceable to a persisted retrieval chunk."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_id: str
+    snapshot_id: str
+    repository_id: str
+    source_file_id: str
+    relative_path: str
+    language: SourceLanguage
+    strategy: str
+    serialization_version: str = "1"
+    source_content_hash: str
+    start_line: int
+    end_line: int
+    start_byte: int
+    end_byte: int
+    content: str
+    provider_id: str
+    model_id: str
+    model_version: str
+    vector_dimension: int
+    embedding: list[float] = Field(default_factory=list)
+
+
+class SemanticEmbeddingArtifactDocument(BaseModel):
+    """Persisted embedding artifact for one semantic build configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "1"
+    snapshot_id: str
+    repository_id: str
+    semantic_config_fingerprint: str
+    provider: EmbeddingProviderDescriptor
+    documents: list[SemanticEmbeddingDocument] = Field(default_factory=list)
+
+
 class LexicalIndexArtifact(BaseModel):
     """Result returned by the lexical-index adapter after a successful build."""
 
@@ -45,6 +125,18 @@ class LexicalIndexArtifact(BaseModel):
     indexed_fields: list[str] = Field(default_factory=list)
     chunks_indexed: int = 0
     index_path: Path
+    refreshed_existing_artifact: bool = False
+
+
+class SemanticIndexArtifact(BaseModel):
+    """Result returned by the vector-index adapter after a successful build."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    vector_engine: str
+    document_count: int = 0
+    embedding_dimension: int = 0
+    artifact_path: Path
     refreshed_existing_artifact: bool = False
 
 
@@ -67,12 +159,45 @@ class LexicalIndexBuildRecord(BaseModel):
     created_at: datetime
 
 
+class SemanticIndexBuildRecord(BaseModel):
+    """Persisted attribution record for one semantic-index build."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    build_id: str
+    repository_id: str
+    snapshot_id: str
+    revision_identity: str
+    revision_source: Literal["git", "filesystem_fingerprint"]
+    semantic_config_fingerprint: str
+    provider_id: str
+    model_id: str
+    model_version: str
+    is_external_provider: bool = False
+    vector_engine: str
+    document_count: int = 0
+    embedding_dimension: int = 0
+    artifact_path: Path
+    created_at: datetime
+
+
 class LexicalIndexBuildDiagnostics(BaseModel):
     """Summary diagnostics safe for CLI and JSON output."""
 
     model_config = ConfigDict(extra="forbid")
 
     chunks_indexed: int = 0
+    refreshed_existing_artifact: bool = False
+
+
+class SemanticIndexBuildDiagnostics(BaseModel):
+    """Summary diagnostics safe for semantic-build CLI and JSON output."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    document_count: int = 0
+    embedding_dimension: int = 0
+    embedding_documents_path: Path
     refreshed_existing_artifact: bool = False
 
 
@@ -85,6 +210,18 @@ class BuildLexicalIndexResult(BaseModel):
     snapshot: SnapshotRecord
     build: LexicalIndexBuildRecord
     diagnostics: LexicalIndexBuildDiagnostics
+
+
+class BuildSemanticIndexResult(BaseModel):
+    """Output DTO for successful semantic-index builds."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository: RepositoryRecord
+    snapshot: SnapshotRecord
+    build: SemanticIndexBuildRecord
+    provider: EmbeddingProviderDescriptor
+    diagnostics: SemanticIndexBuildDiagnostics
 
 
 class RunLexicalQueryRequest(BaseModel):

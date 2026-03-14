@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codeman.application.indexing.build_chunks import BuildChunksUseCase
+from codeman.application.indexing.build_embeddings import BuildEmbeddingsStage
 from codeman.application.indexing.build_lexical_index import BuildLexicalIndexUseCase
+from codeman.application.indexing.build_semantic_index import BuildSemanticIndexUseCase
+from codeman.application.indexing.build_vector_index import BuildVectorIndexStage
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesUseCase
 from codeman.application.query.format_results import RetrievalResultFormatter
 from codeman.application.query.run_lexical_query import RunLexicalQueryUseCase
@@ -18,11 +21,17 @@ from codeman.infrastructure.artifacts.filesystem_artifact_store import (
     FilesystemArtifactStore,
 )
 from codeman.infrastructure.chunkers.chunker_registry import ChunkerRegistry
+from codeman.infrastructure.embeddings.local_hash_provider import (
+    DeterministicLocalHashEmbeddingProvider,
+)
 from codeman.infrastructure.indexes.lexical.sqlite_fts5_builder import (
     SqliteFts5LexicalIndexBuilder,
 )
 from codeman.infrastructure.indexes.lexical.sqlite_fts5_query_engine import (
     SqliteFts5LexicalQueryEngine,
+)
+from codeman.infrastructure.indexes.vector.sqlite_exact_builder import (
+    SqliteExactVectorIndexBuilder,
 )
 from codeman.infrastructure.parsers.parser_registry import ParserRegistry
 from codeman.infrastructure.persistence.sqlite.engine import create_sqlite_engine
@@ -37,6 +46,9 @@ from codeman.infrastructure.persistence.sqlite.repositories.reindex_run_reposito
 )
 from codeman.infrastructure.persistence.sqlite.repositories.repository_repository import (
     SqliteRepositoryMetadataStore,
+)
+from codeman.infrastructure.persistence.sqlite.repositories.semantic_index_build_repository import (
+    SqliteSemanticIndexBuildStore,
 )
 from codeman.infrastructure.persistence.sqlite.repositories.snapshot_repository import (
     SqliteSnapshotMetadataStore,
@@ -62,11 +74,13 @@ class BootstrapContainer:
     source_inventory_store: SqliteSourceInventoryStore
     chunk_store: SqliteChunkStore
     index_build_store: SqliteIndexBuildStore
+    semantic_index_build_store: SqliteSemanticIndexBuildStore
     register_repository: RegisterRepositoryUseCase
     create_snapshot: CreateSnapshotUseCase
     extract_source_files: ExtractSourceFilesUseCase
     build_chunks: BuildChunksUseCase
     build_lexical_index: BuildLexicalIndexUseCase
+    build_semantic_index: BuildSemanticIndexUseCase
     run_lexical_query: RunLexicalQueryUseCase
     reindex_repository: ReindexRepositoryUseCase
 
@@ -102,6 +116,10 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         database_path=runtime_paths.metadata_database_path,
     )
     index_build_store = SqliteIndexBuildStore(
+        engine=snapshot_engine,
+        database_path=runtime_paths.metadata_database_path,
+    )
+    semantic_index_build_store = SqliteSemanticIndexBuildStore(
         engine=snapshot_engine,
         database_path=runtime_paths.metadata_database_path,
     )
@@ -153,6 +171,24 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         index_build_store=index_build_store,
         indexing_config=config.indexing,
     )
+    build_semantic_index = BuildSemanticIndexUseCase(
+        runtime_paths=runtime_paths,
+        repository_store=metadata_store,
+        snapshot_store=snapshot_store,
+        chunk_store=chunk_store,
+        artifact_store=artifact_store,
+        embedding_stage=BuildEmbeddingsStage(
+            artifact_store=artifact_store,
+            embedding_provider=DeterministicLocalHashEmbeddingProvider(),
+            semantic_indexing_config=config.semantic_indexing,
+        ),
+        vector_index_stage=BuildVectorIndexStage(
+            vector_index=SqliteExactVectorIndexBuilder(runtime_paths=runtime_paths),
+            semantic_indexing_config=config.semantic_indexing,
+        ),
+        semantic_index_build_store=semantic_index_build_store,
+        semantic_indexing_config=config.semantic_indexing,
+    )
     run_lexical_query = RunLexicalQueryUseCase(
         runtime_paths=runtime_paths,
         repository_store=metadata_store,
@@ -187,11 +223,13 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         source_inventory_store=source_inventory_store,
         chunk_store=chunk_store,
         index_build_store=index_build_store,
+        semantic_index_build_store=semantic_index_build_store,
         register_repository=register_repository,
         create_snapshot=create_snapshot,
         extract_source_files=extract_source_files,
         build_chunks=build_chunks,
         build_lexical_index=build_lexical_index,
+        build_semantic_index=build_semantic_index,
         run_lexical_query=run_lexical_query,
         reindex_repository=reindex_repository,
     )

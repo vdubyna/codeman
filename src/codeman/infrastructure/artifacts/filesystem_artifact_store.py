@@ -8,6 +8,7 @@ from pathlib import Path
 from codeman.application.ports.artifact_store_port import ArtifactStorePort
 from codeman.contracts.chunking import ChunkPayloadDocument
 from codeman.contracts.repository import SnapshotManifestDocument
+from codeman.contracts.retrieval import SemanticEmbeddingArtifactDocument
 
 
 @dataclass(slots=True)
@@ -28,11 +29,7 @@ class FilesystemArtifactStore(ArtifactStorePort):
         """Write a normalized JSON payload artifact for a retrieval chunk."""
 
         destination = (
-            self.artifacts_root
-            / "snapshots"
-            / snapshot_id
-            / "chunks"
-            / f"{payload.chunk_id}.json"
+            self.artifacts_root / "snapshots" / snapshot_id / "chunks" / f"{payload.chunk_id}.json"
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(payload.model_dump_json(indent=2), encoding="utf-8")
@@ -43,4 +40,35 @@ class FilesystemArtifactStore(ArtifactStorePort):
 
         return ChunkPayloadDocument.model_validate_json(
             payload_path.read_text(encoding="utf-8"),
+        )
+
+    def write_embedding_documents(
+        self,
+        artifact: SemanticEmbeddingArtifactDocument,
+        *,
+        snapshot_id: str,
+        semantic_config_fingerprint: str,
+    ) -> Path:
+        """Write a normalized JSON artifact for semantic embedding documents."""
+
+        destination = (
+            self.artifacts_root
+            / "snapshots"
+            / snapshot_id
+            / "embeddings"
+            / semantic_config_fingerprint
+            / "documents.json"
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(artifact.model_dump_json(indent=2), encoding="utf-8")
+        return destination
+
+    def read_embedding_documents(
+        self,
+        artifact_path: Path,
+    ) -> SemanticEmbeddingArtifactDocument:
+        """Load a normalized JSON artifact for semantic embedding documents."""
+
+        return SemanticEmbeddingArtifactDocument.model_validate_json(
+            artifact_path.read_text(encoding="utf-8"),
         )

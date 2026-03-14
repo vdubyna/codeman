@@ -124,3 +124,23 @@ lexical_index_builds_table = Table(
     Column("index_path", String(length=2048), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
+
+semantic_index_builds_table = Table(
+    "semantic_index_builds",
+    metadata,
+    Column("id", String(length=32), primary_key=True),
+    Column("repository_id", String(length=32), ForeignKey("repositories.id"), nullable=False),
+    Column("snapshot_id", String(length=32), ForeignKey("snapshots.id"), nullable=False),
+    Column("revision_identity", String(length=255), nullable=False),
+    Column("revision_source", String(length=64), nullable=False),
+    Column("semantic_config_fingerprint", String(length=64), nullable=False),
+    Column("provider_id", String(length=128), nullable=False),
+    Column("model_id", String(length=255), nullable=False),
+    Column("model_version", String(length=255), nullable=False),
+    Column("is_external_provider", Integer(), nullable=False),
+    Column("vector_engine", String(length=64), nullable=False),
+    Column("document_count", Integer(), nullable=False),
+    Column("embedding_dimension", Integer(), nullable=False),
+    Column("artifact_path", String(length=2048), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
