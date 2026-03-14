@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 from sqlalchemy.engine import Engine
 
 from codeman.application.ports.snapshot_port import SnapshotMetadataStorePort
@@ -26,6 +27,21 @@ class SqliteSnapshotMetadataStore(SnapshotMetadataStorePort):
         """Ensure the runtime metadata schema is up to date."""
 
         upgrade_database(self.database_path)
+
+    def get_by_snapshot_id(self, snapshot_id: str) -> SnapshotRecord | None:
+        """Look up a snapshot by its persisted identifier."""
+
+        if not self.database_path.exists():
+            return None
+
+        query = select(snapshots_table).where(snapshots_table.c.id == snapshot_id)
+        with self.engine.begin() as connection:
+            row = connection.execute(query).mappings().first()
+
+        if row is None:
+            return None
+
+        return self._row_to_record(row)
 
     def create_snapshot(
         self,
@@ -57,4 +73,17 @@ class SqliteSnapshotMetadataStore(SnapshotMetadataStorePort):
             revision_source=revision_source,
             manifest_path=manifest_path,
             created_at=created_at,
+        )
+
+    @staticmethod
+    def _row_to_record(row: Any) -> SnapshotRecord:
+        """Convert a row mapping into a snapshot contract DTO."""
+
+        return SnapshotRecord(
+            snapshot_id=row["id"],
+            repository_id=row["repository_id"],
+            revision_identity=row["revision_identity"],
+            revision_source=row["revision_source"],
+            manifest_path=Path(row["manifest_path"]),
+            created_at=row["created_at"],
         )

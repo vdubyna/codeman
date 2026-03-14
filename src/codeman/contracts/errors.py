@@ -37,5 +37,8 @@ class ErrorCode:
     REPOSITORY_PATH_NOT_READABLE = "repository_path_not_readable"
     REPOSITORY_ALREADY_REGISTERED = "repository_already_registered"
     REPOSITORY_NOT_REGISTERED = "repository_not_registered"
+    SNAPSHOT_NOT_FOUND = "snapshot_not_found"
+    SNAPSHOT_SOURCE_MISMATCH = "snapshot_source_mismatch"
     SNAPSHOT_CREATION_FAILED = "snapshot_creation_failed"
+    SOURCE_EXTRACTION_FAILED = "source_extraction_failed"
     INTERNAL_ERROR = "internal_error"

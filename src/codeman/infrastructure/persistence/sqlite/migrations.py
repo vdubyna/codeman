@@ -21,6 +21,7 @@ def build_alembic_config(database_path: Path) -> Config:
 
     root = project_root()
     config = Config(str(root / "alembic.ini"))
+    config.attributes["configure_logger"] = False
     config.set_main_option("script_location", str(root / "migrations"))
     config.set_main_option("sqlalchemy.url", build_sqlite_url(database_path))
     return config

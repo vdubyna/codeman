@@ -1,5 +1,5 @@
 # generated: 2026-03-13 23:42:21 +0200
-# last_updated: 2026-03-14 08:31:57 +0200
+# last_updated: 2026-03-14 10:08:00 +0200
 # project: codeman
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-03-13 23:42:21 +0200"
-last_updated: "2026-03-14 08:31:57 +0200"
+last_updated: "2026-03-14 10:08:00 +0200"
 project: codeman
 project_key: NOKEY
 tracking_system: file-system
@@ -46,7 +46,7 @@ development_status:
   1-1-set-up-initial-project-from-starter-template: done
   1-2-register-a-local-repository: done
   1-3-create-a-normalized-repository-snapshot: done
-  1-4-extract-supported-source-files-into-a-source-inventory: backlog
+  1-4-extract-supported-source-files-into-a-source-inventory: done
   1-5-generate-structure-aware-retrieval-chunks: backlog
   1-6-re-index-after-source-or-configuration-changes: backlog
   epic-1-retrospective: optional

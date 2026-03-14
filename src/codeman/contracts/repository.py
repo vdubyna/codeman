@@ -1,4 +1,4 @@
-"""Repository registration contract DTOs."""
+"""Repository, snapshot, and source-inventory contract DTOs."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+SourceLanguage = Literal["php", "javascript", "html", "twig"]
 
 
 class RegisterRepositoryRequest(BaseModel):
@@ -83,3 +85,48 @@ class CreateSnapshotResult(BaseModel):
 
     repository: RepositoryRecord
     snapshot: SnapshotRecord
+
+
+class ExtractSourceFilesRequest(BaseModel):
+    """Input DTO for source extraction from a persisted snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: str
+
+
+class SourceFileRecord(BaseModel):
+    """Metadata persisted for a supported source file discovered from a snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_file_id: str
+    snapshot_id: str
+    repository_id: str
+    relative_path: str
+    language: SourceLanguage
+    content_hash: str
+    byte_size: int
+    discovered_at: datetime
+
+
+class SourceInventoryDiagnostics(BaseModel):
+    """Concise extraction diagnostics safe for CLI and JSON output."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    persisted_by_language: dict[SourceLanguage, int] = Field(default_factory=dict)
+    skipped_by_reason: dict[str, int] = Field(default_factory=dict)
+    persisted_total: int = 0
+    skipped_total: int = 0
+
+
+class ExtractSourceFilesResult(BaseModel):
+    """Output DTO for successful source inventory extraction."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository: RepositoryRecord
+    snapshot: SnapshotRecord
+    source_files: list[SourceFileRecord]
+    diagnostics: SourceInventoryDiagnostics

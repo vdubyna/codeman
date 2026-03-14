@@ -1,0 +1,1 @@
+# Mixed Stack Fixture

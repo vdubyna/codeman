@@ -31,6 +31,9 @@ class SnapshotMetadataStorePort(Protocol):
     def initialize(self) -> None:
         """Prepare snapshot persistence for use."""
 
+    def get_by_snapshot_id(self, snapshot_id: str) -> SnapshotRecord | None:
+        """Return a snapshot record if the identifier exists."""
+
     def create_snapshot(
         self,
         *,
