@@ -1,5 +1,5 @@
 # generated: 2026-03-13 23:42:21 +0200
-# last_updated: 2026-03-14 11:21:23 +0200
+# last_updated: 2026-03-14 11:28:00 +0200
 # project: codeman
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-03-13 23:42:21 +0200"
-last_updated: "2026-03-14 11:21:23 +0200"
+last_updated: "2026-03-14 11:50:55 +0200"
 project: codeman
 project_key: NOKEY
 tracking_system: file-system
@@ -51,8 +51,8 @@ development_status:
   1-6-re-index-after-source-or-configuration-changes: done
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-build-lexical-index-artifacts: backlog
+  epic-2: in-progress
+  2-1-build-lexical-index-artifacts: done
   2-2-run-lexical-retrieval-against-indexed-chunks: backlog
   2-3-present-agent-friendly-ranked-retrieval-results: backlog
   2-4-build-semantic-retrieval-index-artifacts: backlog

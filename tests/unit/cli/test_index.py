@@ -7,6 +7,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from codeman.application.indexing.build_chunks import SourceInventoryMissingError
+from codeman.application.indexing.build_lexical_index import ChunkBaselineMissingError
 from codeman.application.indexing.extract_source_files import SnapshotSourceMismatchError
 from codeman.application.repo.reindex_repository import IndexedBaselineMissingError
 from codeman.bootstrap import bootstrap
@@ -24,6 +25,11 @@ from codeman.contracts.repository import (
     SnapshotRecord,
     SourceFileRecord,
     SourceInventoryDiagnostics,
+)
+from codeman.contracts.retrieval import (
+    BuildLexicalIndexResult,
+    LexicalIndexBuildDiagnostics,
+    LexicalIndexBuildRecord,
 )
 
 runner = CliRunner()
@@ -200,6 +206,59 @@ def build_reindex_result(repository_path: Path) -> ReindexRepositoryResult:
     )
 
 
+def build_lexical_result(repository_path: Path) -> BuildLexicalIndexResult:
+    now = datetime.now(UTC)
+    repository = RepositoryRecord(
+        repository_id="repo-123",
+        repository_name=repository_path.name,
+        canonical_path=repository_path,
+        requested_path=repository_path,
+        created_at=now,
+        updated_at=now,
+    )
+    snapshot = SnapshotRecord(
+        snapshot_id="snapshot-123",
+        repository_id=repository.repository_id,
+        revision_identity="revision-abc",
+        revision_source="filesystem_fingerprint",
+        manifest_path=repository_path / "manifest.json",
+        created_at=now,
+        source_inventory_extracted_at=now,
+        chunk_generation_completed_at=now,
+        indexing_config_fingerprint="fingerprint-123",
+    )
+    return BuildLexicalIndexResult(
+        repository=repository,
+        snapshot=snapshot,
+        build=LexicalIndexBuildRecord(
+            build_id="build-123",
+            repository_id=repository.repository_id,
+            snapshot_id=snapshot.snapshot_id,
+            revision_identity=snapshot.revision_identity,
+            revision_source=snapshot.revision_source,
+            indexing_config_fingerprint="fingerprint-123",
+            lexical_engine="sqlite-fts5",
+            tokenizer_spec="unicode61 remove_diacritics 0 tokenchars '_'",
+            indexed_fields=["content", "relative_path"],
+            chunks_indexed=2,
+            index_path=(
+                repository_path
+                / ".codeman"
+                / "indexes"
+                / "lexical"
+                / repository.repository_id
+                / snapshot.snapshot_id
+                / "lexical.sqlite3"
+            ),
+            created_at=now,
+        ),
+        diagnostics=LexicalIndexBuildDiagnostics(
+            chunks_indexed=2,
+            refreshed_existing_artifact=False,
+        ),
+    )
+
+
 def test_index_extract_sources_command_renders_text_summary(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -361,3 +420,58 @@ def test_index_reindex_command_returns_json_failure_for_missing_baseline(
     assert payload["ok"] is False
     assert payload["error"]["code"] == "indexed_baseline_missing"
     assert payload["meta"]["command"] == "index.reindex"
+
+
+def test_index_build_lexical_command_renders_text_summary(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target_repo = tmp_path / "registered-repo"
+    target_repo.mkdir()
+    container = bootstrap(workspace_root=workspace)
+
+    class StubBuildLexicalIndexUseCase:
+        def execute(self, _request: object) -> BuildLexicalIndexResult:
+            return build_lexical_result(target_repo.resolve())
+
+    container.build_lexical_index = StubBuildLexicalIndexUseCase()
+
+    result = runner.invoke(
+        app,
+        ["index", "build-lexical", "snapshot-123"],
+        obj=container,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Built lexical index: 2 chunks" in result.stdout
+    assert "Lexical engine: sqlite-fts5" in result.stdout
+    assert "Tokenizer: unicode61 remove_diacritics 0 tokenchars '_'" in result.stdout
+
+
+def test_index_build_lexical_command_returns_json_failure_for_missing_baseline(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    container = bootstrap(workspace_root=workspace)
+
+    class StubBuildLexicalIndexUseCase:
+        def execute(self, _request: object) -> object:
+            raise ChunkBaselineMissingError(
+                "Chunk baseline is missing for snapshot; run "
+                "`codeman index build-chunks snapshot-123` first.",
+            )
+
+    container.build_lexical_index = StubBuildLexicalIndexUseCase()
+
+    result = runner.invoke(
+        app,
+        ["index", "build-lexical", "snapshot-123", "--output-format", "json"],
+        obj=container,
+    )
+
+    payload = json.loads(result.stdout.splitlines()[-1])
+
+    assert result.exit_code == 34
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "chunk_baseline_missing"
+    assert payload["meta"]["command"] == "index.build-lexical"

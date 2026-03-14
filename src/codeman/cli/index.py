@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 from codeman.application.indexing.build_chunks import BuildChunksError
+from codeman.application.indexing.build_lexical_index import BuildLexicalIndexError
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesError
 from codeman.application.repo.reindex_repository import ReindexRepositoryError
 from codeman.bootstrap import BootstrapContainer
@@ -14,6 +15,7 @@ from codeman.contracts.common import SuccessEnvelope
 from codeman.contracts.errors import ErrorDetail, FailureEnvelope
 from codeman.contracts.reindexing import ReindexRepositoryRequest
 from codeman.contracts.repository import ExtractSourceFilesRequest
+from codeman.contracts.retrieval import BuildLexicalIndexRequest
 
 app = typer.Typer(help="Index build and refresh commands.", no_args_is_help=True)
 
@@ -50,6 +52,26 @@ def _handle_build_chunks_error(
     command_name: str,
 ) -> None:
     """Render chunk-generation failures in the requested output format."""
+
+    envelope = FailureEnvelope(
+        error=ErrorDetail(code=error.error_code, message=error.message),
+        meta=build_command_meta(command_name, output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+    else:
+        typer.secho(error.message, err=True, fg=typer.colors.RED)
+
+    raise typer.Exit(code=error.exit_code)
+
+
+def _handle_build_lexical_error(
+    *,
+    error: BuildLexicalIndexError,
+    output_format: OutputFormat,
+    command_name: str,
+) -> None:
+    """Render lexical-build failures in the requested output format."""
 
     envelope = FailureEnvelope(
         error=ErrorDetail(code=error.error_code, message=error.message),
@@ -190,6 +212,55 @@ def build_chunks(
     if fallback_paths:
         lines.append(f"Fallback paths: {', '.join(fallback_paths)}")
     typer.echo("\n".join(lines))
+
+
+@app.command("build-lexical")
+def build_lexical(
+    ctx: typer.Context,
+    snapshot_id: str,
+    output_format: OutputFormat = typer.Option(OutputFormat.TEXT, "--output-format"),
+) -> None:
+    """Build lexical retrieval artifacts for a previously chunked snapshot."""
+
+    from codeman.cli.app import get_container
+
+    typer.echo(f"Building lexical index for snapshot: {snapshot_id}", err=True)
+    container: BootstrapContainer = get_container(ctx)
+    try:
+        result = container.build_lexical_index.execute(
+            BuildLexicalIndexRequest(snapshot_id=snapshot_id),
+        )
+    except BuildLexicalIndexError as error:
+        _handle_build_lexical_error(
+            error=error,
+            output_format=output_format,
+            command_name="index.build-lexical",
+        )
+
+    envelope = SuccessEnvelope(
+        data=result,
+        meta=build_command_meta("index.build-lexical", output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+        return
+
+    typer.echo(
+        "\n".join(
+            [
+                f"Built lexical index: {result.diagnostics.chunks_indexed} chunks",
+                f"Build ID: {result.build.build_id}",
+                f"Snapshot ID: {result.snapshot.snapshot_id}",
+                f"Repository ID: {result.repository.repository_id}",
+                f"Lexical engine: {result.build.lexical_engine}",
+                f"Tokenizer: {result.build.tokenizer_spec}",
+                f"Indexed fields: {', '.join(result.build.indexed_fields)}",
+                f"Index path: {result.build.index_path}",
+                "Refreshed existing artifact: "
+                f"{'yes' if result.diagnostics.refreshed_existing_artifact else 'no'}",
+            ]
+        )
+    )
 
 
 @app.command("reindex")

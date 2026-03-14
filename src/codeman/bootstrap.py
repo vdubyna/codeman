@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codeman.application.indexing.build_chunks import BuildChunksUseCase
+from codeman.application.indexing.build_lexical_index import BuildLexicalIndexUseCase
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesUseCase
 from codeman.application.repo.create_snapshot import CreateSnapshotUseCase
 from codeman.application.repo.register_repository import RegisterRepositoryUseCase
@@ -15,10 +16,16 @@ from codeman.infrastructure.artifacts.filesystem_artifact_store import (
     FilesystemArtifactStore,
 )
 from codeman.infrastructure.chunkers.chunker_registry import ChunkerRegistry
+from codeman.infrastructure.indexes.lexical.sqlite_fts5_builder import (
+    SqliteFts5LexicalIndexBuilder,
+)
 from codeman.infrastructure.parsers.parser_registry import ParserRegistry
 from codeman.infrastructure.persistence.sqlite.engine import create_sqlite_engine
 from codeman.infrastructure.persistence.sqlite.repositories.chunk_repository import (
     SqliteChunkStore,
+)
+from codeman.infrastructure.persistence.sqlite.repositories.index_build_repository import (
+    SqliteIndexBuildStore,
 )
 from codeman.infrastructure.persistence.sqlite.repositories.reindex_run_repository import (
     SqliteReindexRunStore,
@@ -49,10 +56,12 @@ class BootstrapContainer:
     snapshot_store: SqliteSnapshotMetadataStore
     source_inventory_store: SqliteSourceInventoryStore
     chunk_store: SqliteChunkStore
+    index_build_store: SqliteIndexBuildStore
     register_repository: RegisterRepositoryUseCase
     create_snapshot: CreateSnapshotUseCase
     extract_source_files: ExtractSourceFilesUseCase
     build_chunks: BuildChunksUseCase
+    build_lexical_index: BuildLexicalIndexUseCase
     reindex_repository: ReindexRepositoryUseCase
 
 
@@ -83,6 +92,10 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         database_path=runtime_paths.metadata_database_path,
     )
     chunk_store = SqliteChunkStore(
+        engine=snapshot_engine,
+        database_path=runtime_paths.metadata_database_path,
+    )
+    index_build_store = SqliteIndexBuildStore(
         engine=snapshot_engine,
         database_path=runtime_paths.metadata_database_path,
     )
@@ -124,6 +137,16 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         artifact_store=artifact_store,
         indexing_config=config.indexing,
     )
+    build_lexical_index = BuildLexicalIndexUseCase(
+        runtime_paths=runtime_paths,
+        repository_store=metadata_store,
+        snapshot_store=snapshot_store,
+        chunk_store=chunk_store,
+        artifact_store=artifact_store,
+        lexical_index=SqliteFts5LexicalIndexBuilder(runtime_paths=runtime_paths),
+        index_build_store=index_build_store,
+        indexing_config=config.indexing,
+    )
     reindex_repository = ReindexRepositoryUseCase(
         runtime_paths=runtime_paths,
         repository_store=metadata_store,
@@ -147,9 +170,11 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         snapshot_store=snapshot_store,
         source_inventory_store=source_inventory_store,
         chunk_store=chunk_store,
+        index_build_store=index_build_store,
         register_repository=register_repository,
         create_snapshot=create_snapshot,
         extract_source_files=extract_source_files,
         build_chunks=build_chunks,
+        build_lexical_index=build_lexical_index,
         reindex_repository=reindex_repository,
     )

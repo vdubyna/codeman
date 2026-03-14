@@ -107,3 +107,20 @@ reindex_runs_table = Table(
     Column("chunks_rebuilt", Integer(), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
+
+lexical_index_builds_table = Table(
+    "lexical_index_builds",
+    metadata,
+    Column("id", String(length=32), primary_key=True),
+    Column("repository_id", String(length=32), ForeignKey("repositories.id"), nullable=False),
+    Column("snapshot_id", String(length=32), ForeignKey("snapshots.id"), nullable=False),
+    Column("revision_identity", String(length=255), nullable=False),
+    Column("revision_source", String(length=64), nullable=False),
+    Column("indexing_config_fingerprint", String(length=64), nullable=False),
+    Column("lexical_engine", String(length=64), nullable=False),
+    Column("tokenizer_spec", String(length=255), nullable=False),
+    Column("indexed_fields_json", String(length=4096), nullable=False),
+    Column("chunks_indexed", Integer(), nullable=False),
+    Column("index_path", String(length=2048), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)

@@ -25,6 +25,11 @@ uv run codeman index build-chunks <snapshot-id> --output-format json
 ```
 
 ```bash
+uv run codeman index build-lexical <snapshot-id>
+uv run codeman index build-lexical <snapshot-id> --output-format json
+```
+
+```bash
 uv run codeman index reindex <repository-id>
 uv run codeman index reindex <repository-id> --output-format json
 ```
