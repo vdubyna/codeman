@@ -68,4 +68,5 @@ class ErrorCode:
     COMPARE_RETRIEVAL_MODE_SNAPSHOT_MISMATCH = "compare_retrieval_mode_snapshot_mismatch"
     COMPARE_RETRIEVAL_MODES_FAILED = "compare_retrieval_modes_failed"
     REINDEX_FAILED = "reindex_failed"
+    CONFIGURATION_INVALID = "configuration_invalid"
     INTERNAL_ERROR = "internal_error"

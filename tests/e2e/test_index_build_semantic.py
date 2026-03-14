@@ -243,8 +243,8 @@ def test_uv_run_index_build_semantic_returns_stable_failure_for_invalid_vector_d
 
     payload = json.loads(build_semantic_result.stdout)
 
-    assert build_semantic_result.returncode == 39
+    assert build_semantic_result.returncode == 18
     assert payload["ok"] is False
-    assert payload["error"]["code"] == "semantic_index_build_failed"
+    assert payload["error"]["code"] == "configuration_invalid"
     assert "CODEMAN_SEMANTIC_VECTOR_DIMENSION" in payload["error"]["message"]
     assert "Traceback" not in build_semantic_result.stderr

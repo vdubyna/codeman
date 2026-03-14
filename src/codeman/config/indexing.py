@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -35,9 +34,7 @@ class IndexingConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    fingerprint_salt: str = Field(
-        default_factory=lambda: os.environ.get("CODEMAN_INDEXING_FINGERPRINT_SALT", ""),
-    )
+    fingerprint_salt: str = Field(default="")
 
 
 def build_indexing_policy_descriptor(config: IndexingConfig) -> dict[str, Any]:

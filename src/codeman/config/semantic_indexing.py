@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SEMANTIC_INDEX_FINGERPRINT_SCHEMA_VERSION = "1"
 SEMANTIC_PROVIDER_POLICY_VERSIONS = {
@@ -18,58 +17,51 @@ SEMANTIC_VECTOR_ENGINE_POLICY_VERSIONS = {
     "sqlite-exact": "sqlite-exact-v1",
 }
 
-
-def _optional_path_from_env(name: str) -> Path | None:
-    value = os.environ.get(name)
-    if not value:
-        return None
-    return Path(value).expanduser().resolve()
-
-
 class SemanticIndexingConfig(BaseModel):
     """Minimal semantic-indexing configuration for local-first attribution."""
 
     model_config = ConfigDict(extra="forbid")
 
-    provider_id: str | None = Field(
-        default_factory=lambda: os.environ.get("CODEMAN_SEMANTIC_PROVIDER_ID"),
-    )
-    model_id: str = Field(
-        default_factory=lambda: os.environ.get("CODEMAN_SEMANTIC_MODEL_ID", "hash-embedding"),
-    )
-    model_version: str = Field(
-        default_factory=lambda: os.environ.get("CODEMAN_SEMANTIC_MODEL_VERSION", "1"),
-    )
-    local_model_path: Path | None = Field(
-        default_factory=lambda: _optional_path_from_env("CODEMAN_SEMANTIC_LOCAL_MODEL_PATH"),
-    )
-    vector_engine: str = Field(
-        default_factory=lambda: os.environ.get("CODEMAN_SEMANTIC_VECTOR_ENGINE", "sqlite-exact"),
-    )
-    vector_dimension: int | str = Field(
-        default_factory=lambda: os.environ.get("CODEMAN_SEMANTIC_VECTOR_DIMENSION", "16"),
-    )
-    fingerprint_salt: str = Field(
-        default_factory=lambda: os.environ.get("CODEMAN_SEMANTIC_FINGERPRINT_SALT", ""),
-    )
+    provider_id: str | None = Field(default=None)
+    model_id: str = Field(default="hash-embedding")
+    model_version: str = Field(default="1")
+    local_model_path: Path | None = Field(default=None)
+    vector_engine: str = Field(default="sqlite-exact")
+    vector_dimension: int = Field(default=16)
+    fingerprint_salt: str = Field(default="")
+
+    @field_validator("provider_id", mode="before")
+    @classmethod
+    def _normalize_provider_id(cls, value: str | None) -> str | None:
+        if value in (None, ""):
+            return None
+        return value
+
+    @field_validator("local_model_path", mode="before")
+    @classmethod
+    def _resolve_local_model_path(cls, value: Path | str | None) -> Path | None:
+        if value in (None, ""):
+            return None
+        return Path(value).expanduser().resolve()
+
+    @field_validator("vector_dimension", mode="before")
+    @classmethod
+    def _validate_vector_dimension(cls, value: int | str) -> int:
+        message = "Invalid CODEMAN_SEMANTIC_VECTOR_DIMENSION; expected a positive integer."
+        try:
+            resolved_value = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(message) from exc
+
+        if resolved_value <= 0:
+            raise ValueError(message)
+
+        return resolved_value
 
     def resolved_vector_dimension(self) -> int:
         """Return the configured embedding dimension as a validated integer."""
 
-        raw_value = self.vector_dimension
-        try:
-            value = int(raw_value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "Invalid CODEMAN_SEMANTIC_VECTOR_DIMENSION; expected a positive integer."
-            ) from exc
-
-        if value <= 0:
-            raise ValueError(
-                "Invalid CODEMAN_SEMANTIC_VECTOR_DIMENSION; expected a positive integer."
-            )
-
-        return value
+        return self.vector_dimension
 
 
 def build_semantic_indexing_descriptor(config: SemanticIndexingConfig) -> dict[str, Any]:

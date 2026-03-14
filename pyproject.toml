@@ -37,3 +37,21 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.codeman]
+project_name = "codeman"
+default_output_format = "text"
+
+[tool.codeman.runtime]
+root_dir_name = ".codeman"
+metadata_database_name = "metadata.sqlite3"
+
+[tool.codeman.indexing]
+fingerprint_salt = ""
+
+[tool.codeman.semantic_indexing]
+model_id = "hash-embedding"
+model_version = "1"
+vector_engine = "sqlite-exact"
+vector_dimension = 16
+fingerprint_salt = ""

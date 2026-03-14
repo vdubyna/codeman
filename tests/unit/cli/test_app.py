@@ -1,3 +1,5 @@
+import json
+
 import click
 from typer.testing import CliRunner
 
@@ -22,3 +24,21 @@ def test_get_container_reuses_context_object() -> None:
     resolved = get_container(ctx)
 
     assert resolved is container
+
+
+def test_cli_returns_json_failure_when_configuration_is_invalid(tmp_path) -> None:
+    target_repo = tmp_path / "registered-repo"
+    target_repo.mkdir()
+
+    result = runner.invoke(
+        app,
+        ["repo", "register", str(target_repo), "--output-format", "json"],
+        env={"CODEMAN_SEMANTIC_VECTOR_DIMENSION": "abc"},
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 18
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "configuration_invalid"
+    assert "configuration" in payload["error"]["message"].lower()

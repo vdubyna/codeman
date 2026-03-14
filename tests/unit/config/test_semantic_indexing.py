@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from codeman.config.semantic_indexing import (
     SemanticIndexingConfig,
     build_semantic_indexing_fingerprint,
@@ -52,12 +55,14 @@ def test_semantic_indexing_fingerprint_changes_when_model_path_changes(tmp_path:
     )
 
 
-def test_semantic_indexing_reports_invalid_vector_dimension_without_crashing() -> None:
-    config = SemanticIndexingConfig(vector_dimension="abc")
+def test_semantic_indexing_normalizes_valid_string_vector_dimension() -> None:
+    config = SemanticIndexingConfig(vector_dimension="8")
 
-    try:
-        config.resolved_vector_dimension()
-    except ValueError as exc:
-        assert "CODEMAN_SEMANTIC_VECTOR_DIMENSION" in str(exc)
-    else:
-        raise AssertionError("Expected invalid vector dimension to raise ValueError.")
+    assert config.resolved_vector_dimension() == 8
+
+
+def test_semantic_indexing_rejects_invalid_vector_dimension() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        SemanticIndexingConfig(vector_dimension="abc")
+
+    assert "CODEMAN_SEMANTIC_VECTOR_DIMENSION" in str(exc_info.value)

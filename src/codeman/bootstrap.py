@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Mapping
 
 from codeman.application.indexing.build_chunks import BuildChunksUseCase
 from codeman.application.indexing.build_embeddings import BuildEmbeddingsStage
@@ -19,6 +20,7 @@ from codeman.application.query.run_semantic_query import RunSemanticQueryUseCase
 from codeman.application.repo.create_snapshot import CreateSnapshotUseCase
 from codeman.application.repo.register_repository import RegisterRepositoryUseCase
 from codeman.application.repo.reindex_repository import ReindexRepositoryUseCase
+from codeman.config.loader import ConfigOverrides, load_app_config
 from codeman.config.models import AppConfig
 from codeman.infrastructure.artifacts.filesystem_artifact_store import (
     FilesystemArtifactStore,
@@ -94,12 +96,27 @@ class BootstrapContainer:
     reindex_repository: ReindexRepositoryUseCase
 
 
-def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
+def bootstrap(
+    workspace_root: Path | None = None,
+    *,
+    cli_overrides: ConfigOverrides | None = None,
+    allow_missing_local_config: bool = True,
+    environ: Mapping[str, str] | None = None,
+) -> BootstrapContainer:
     """Build the minimal container required by the current scaffold."""
 
-    config = AppConfig()
+    resolved_overrides = cli_overrides or ConfigOverrides()
     if workspace_root is not None:
-        config.runtime.workspace_root = workspace_root.resolve()
+        resolved_overrides = replace(
+            resolved_overrides,
+            workspace_root=workspace_root.resolve(),
+        )
+
+    config = load_app_config(
+        cli_overrides=resolved_overrides,
+        allow_missing_local_config=allow_missing_local_config,
+        environ=environ,
+    )
 
     selected_workspace = config.runtime.workspace_root
     runtime_paths = build_runtime_paths(

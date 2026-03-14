@@ -133,6 +133,58 @@ JSON output keeps the standard success envelope on `stdout` and exposes a single
 }
 ```
 
+## Config Commands
+
+All commands resolve configuration with the same deterministic precedence:
+
+1. project defaults from `[tool.codeman]` in `pyproject.toml`
+2. optional user-local TOML config
+3. explicit CLI overrides
+4. environment variables as final overrides
+
+The current root-level CLI overrides are intentionally narrow and apply to any command when passed
+before the command group:
+
+```bash
+uv run codeman --config-path /path/to/config.toml --workspace-root /tmp/codeman-workspace config show
+uv run codeman --runtime-root-dir .codeman-dev --metadata-database-name metadata.dev.sqlite3 repo register /path/to/local/repository
+```
+
+`CODEMAN_CONFIG_PATH` is the environment equivalent of `--config-path` and is treated as an explicit
+local-config override for the current invocation.
+
+The default optional user-local config path is `~/.config/codeman/config.toml` on systems without
+`XDG_CONFIG_HOME`, or `$XDG_CONFIG_HOME/codeman/config.toml` when that variable is set. A missing
+implicit local config file is non-fatal. An explicit `--config-path` or `CODEMAN_CONFIG_PATH` must
+point to a readable TOML file.
+
+```bash
+uv run codeman config show
+uv run codeman config show --output-format json
+uv run codeman --config-path /path/to/config.toml --workspace-root /tmp/workspace config show --output-format json
+```
+
+`config show` returns the effective resolved configuration for the current invocation.
+
+Text output includes:
+- Source precedence and the resolved project/defaults and local-config paths.
+- Effective runtime values such as workspace root, runtime root directory, and metadata database name.
+- Effective indexing and semantic-indexing settings, without introducing any extra workflow side effects.
+
+JSON output keeps the standard success envelope on `stdout` and returns:
+- `project_name`
+- `default_output_format`
+- `runtime`
+- `indexing`
+- `semantic_indexing`
+- `metadata`
+
+Invalid or conflicting configuration fails before the underlying workflow starts. That includes
+malformed `[tool.codeman]` defaults in `pyproject.toml`, malformed local TOML config, missing
+explicit config paths, and invalid resolved field values. JSON mode returns a standard failure
+envelope with `error.code = "configuration_invalid"` and exit code `18`; text mode prints the
+validation message on `stderr`.
+
 ```bash
 uv run codeman query semantic <repository-id> "controller home route"
 uv run codeman query semantic <repository-id> "controller home route" --output-format json
