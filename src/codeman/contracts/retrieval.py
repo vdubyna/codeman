@@ -256,6 +256,16 @@ class RunSemanticQueryRequest(BaseModel):
     max_results: int = Field(default=20, gt=0, le=100)
 
 
+class RunHybridQueryRequest(BaseModel):
+    """Input DTO for hybrid-query execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository_id: str
+    query_text: str
+    max_results: int = Field(default=20, gt=0, le=100)
+
+
 class RetrievalQueryMetadata(BaseModel):
     """Stable query metadata shared by retrieval result packages."""
 
@@ -307,6 +317,16 @@ class SemanticRetrievalBuildContext(RetrievalBuildContext):
     model_version: str
     vector_engine: str
     semantic_config_fingerprint: str
+
+
+class HybridRetrievalBuildContext(RetrievalBuildContext):
+    """Compact hybrid build identity for retrieval output."""
+
+    fusion_strategy: Literal["rrf"] = "rrf"
+    rank_constant: int
+    rank_window_size: int
+    lexical_build: LexicalRetrievalBuildContext
+    semantic_build: SemanticRetrievalBuildContext
 
 
 class LexicalQueryMatch(BaseModel):
@@ -364,6 +384,25 @@ class SemanticQueryDiagnostics(RetrievalQueryDiagnostics):
     """Minimal diagnostics safe for CLI and JSON semantic query output."""
 
 
+class HybridComponentQueryDiagnostics(RetrievalQueryDiagnostics):
+    """Component diagnostics captured inside one hybrid query execution."""
+
+    contributed_result_count: int = 0
+
+
+class HybridQueryDiagnostics(RetrievalQueryDiagnostics):
+    """Minimal diagnostics safe for CLI and JSON hybrid query output."""
+
+    fusion_strategy: Literal["rrf"] = "rrf"
+    rank_constant: int
+    rank_window_size: int
+    total_match_count_is_lower_bound: bool = False
+    degraded: bool = False
+    degraded_reason: str | None = None
+    lexical: HybridComponentQueryDiagnostics
+    semantic: HybridComponentQueryDiagnostics
+
+
 class SemanticQueryResult(BaseModel):
     """Adapter-facing semantic query payload before repository context is attached."""
 
@@ -418,3 +457,11 @@ class RunSemanticQueryResult(RetrievalResultPackage):
 
     retrieval_mode: Literal["semantic"] = "semantic"
     build: SemanticRetrievalBuildContext
+
+
+class RunHybridQueryResult(RetrievalResultPackage):
+    """Output DTO for successful hybrid-query execution."""
+
+    retrieval_mode: Literal["hybrid"] = "hybrid"
+    build: HybridRetrievalBuildContext
+    diagnostics: HybridQueryDiagnostics

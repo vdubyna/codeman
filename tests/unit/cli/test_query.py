@@ -5,6 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from codeman.application.query.run_hybrid_query import HybridComponentBaselineMissingError
 from codeman.application.query.run_lexical_query import LexicalBuildBaselineMissingError
 from codeman.application.query.run_semantic_query import (
     SemanticArtifactCorruptError,
@@ -13,12 +14,16 @@ from codeman.application.query.run_semantic_query import (
 from codeman.bootstrap import bootstrap
 from codeman.cli.app import app
 from codeman.contracts.retrieval import (
+    HybridComponentQueryDiagnostics,
+    HybridQueryDiagnostics,
+    HybridRetrievalBuildContext,
     LexicalRetrievalBuildContext,
     RetrievalQueryDiagnostics,
     RetrievalQueryMetadata,
     RetrievalRepositoryContext,
     RetrievalResultItem,
     RetrievalSnapshotContext,
+    RunHybridQueryResult,
     RunLexicalQueryResult,
     RunSemanticQueryResult,
     SemanticRetrievalBuildContext,
@@ -128,6 +133,90 @@ def build_semantic_query_result(
             query_latency_ms=7,
             total_match_count=8,
             truncated=True,
+        ),
+    )
+
+
+def build_hybrid_query_result(
+    repository_path: Path,
+    *,
+    query: str = "controller home route",
+) -> RunHybridQueryResult:
+    repository = RetrievalRepositoryContext(
+        repository_id="repo-123",
+        repository_name=repository_path.name,
+    )
+    snapshot = RetrievalSnapshotContext(
+        snapshot_id="snapshot-123",
+        revision_identity="revision-abc",
+        revision_source="filesystem_fingerprint",
+    )
+    return RunHybridQueryResult(
+        repository=repository,
+        snapshot=snapshot,
+        build=HybridRetrievalBuildContext(
+            build_id="hybrid-build-123",
+            rank_constant=60,
+            rank_window_size=50,
+            lexical_build=LexicalRetrievalBuildContext(
+                build_id="lexical-build-123",
+                lexical_engine="sqlite-fts5",
+                tokenizer_spec="unicode61 remove_diacritics 0 tokenchars '_'",
+                indexed_fields=["content", "relative_path"],
+            ),
+            semantic_build=SemanticRetrievalBuildContext(
+                build_id="semantic-build-123",
+                provider_id="local-hash",
+                model_id="fixture-local",
+                model_version="2026-03-14",
+                vector_engine="sqlite-exact",
+                semantic_config_fingerprint="semantic-fingerprint-123",
+            ),
+        ),
+        query=RetrievalQueryMetadata(text=query),
+        results=[
+            RetrievalResultItem(
+                chunk_id="chunk-123",
+                relative_path="src/Controller/HomeController.php",
+                language="php",
+                strategy="php_structure",
+                score=0.0323,
+                rank=1,
+                start_line=4,
+                end_line=10,
+                start_byte=32,
+                end_byte=180,
+                content_preview=(
+                    "final class HomeController { public function __invoke(): "
+                    "string { return 'home'; } }"
+                ),
+                explanation=(
+                    "Fused hybrid rank from lexical and semantic evidence for this persisted chunk."
+                ),
+            )
+        ],
+        diagnostics=HybridQueryDiagnostics(
+            match_count=1,
+            query_latency_ms=9,
+            total_match_count=4,
+            truncated=True,
+            rank_constant=60,
+            rank_window_size=50,
+            total_match_count_is_lower_bound=False,
+            lexical=HybridComponentQueryDiagnostics(
+                match_count=2,
+                total_match_count=2,
+                query_latency_ms=4,
+                truncated=False,
+                contributed_result_count=1,
+            ),
+            semantic=HybridComponentQueryDiagnostics(
+                match_count=3,
+                total_match_count=6,
+                query_latency_ms=5,
+                truncated=True,
+                contributed_result_count=1,
+            ),
         ),
     )
 
@@ -385,3 +474,164 @@ def test_query_semantic_command_returns_json_failure_for_corrupt_artifact(
     assert payload["ok"] is False
     assert payload["error"]["code"] == "semantic_artifact_corrupt"
     assert payload["error"]["details"]["reason"] == "row count does not match recorded metadata"
+
+
+def test_query_hybrid_command_renders_text_summary(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target_repo = tmp_path / "registered-repo"
+    target_repo.mkdir()
+    container = bootstrap(workspace_root=workspace)
+
+    class StubRunHybridQueryUseCase:
+        def execute(self, _request: object) -> RunHybridQueryResult:
+            return build_hybrid_query_result(target_repo.resolve())
+
+    container.run_hybrid_query = StubRunHybridQueryUseCase()
+
+    result = runner.invoke(
+        app,
+        ["query", "hybrid", "repo-123", "controller home route"],
+        obj=container,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Hybrid retrieval returned 1 of 4 results (truncated)" in result.stdout
+    assert "Fusion Strategy: rrf" in result.stdout
+    assert "Lexical Component: matches=2 total=2 latency=4 ms contributed=1" in result.stdout
+    assert "Semantic Component: matches=3 total=6 latency=5 ms contributed=1" in result.stdout
+    assert "explanation: Fused hybrid rank from lexical and semantic evidence" in result.stdout
+
+
+def test_query_hybrid_command_accepts_option_like_query_via_explicit_flag(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target_repo = tmp_path / "registered-repo"
+    target_repo.mkdir()
+    container = bootstrap(workspace_root=workspace)
+    seen_requests: list[object] = []
+
+    class StubRunHybridQueryUseCase:
+        def execute(self, request: object) -> RunHybridQueryResult:
+            seen_requests.append(request)
+            return build_hybrid_query_result(
+                target_repo.resolve(),
+                query="--query",
+            )
+
+    container.run_hybrid_query = StubRunHybridQueryUseCase()
+
+    result = runner.invoke(
+        app,
+        [
+            "query",
+            "hybrid",
+            "repo-123",
+            "--query=--query",
+            "--output-format",
+            "json",
+        ],
+        obj=container,
+    )
+
+    payload = json.loads(result.stdout.splitlines()[-1])
+
+    assert result.exit_code == 0, result.stdout
+    assert seen_requests[0].query_text == "--query"
+    assert payload["ok"] is True
+    assert payload["data"]["query"]["text"] == "--query"
+    assert payload["meta"]["command"] == "query.hybrid"
+
+
+def test_query_hybrid_command_returns_json_failure_for_missing_component_baseline(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    container = bootstrap(workspace_root=workspace)
+
+    class StubRunHybridQueryUseCase:
+        def execute(self, _request: object) -> object:
+            raise HybridComponentBaselineMissingError(
+                "Hybrid query cannot run because the semantic baseline is unavailable.",
+                details={
+                    "component": "semantic",
+                    "component_error_code": "semantic_build_baseline_missing",
+                },
+            )
+
+    container.run_hybrid_query = StubRunHybridQueryUseCase()
+
+    result = runner.invoke(
+        app,
+        [
+            "query",
+            "hybrid",
+            "repo-123",
+            "controller home route",
+            "--output-format",
+            "json",
+        ],
+        obj=container,
+    )
+
+    payload = json.loads(result.stdout.splitlines()[-1])
+
+    assert result.exit_code == 48
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "hybrid_component_baseline_missing"
+    assert payload["error"]["details"]["component"] == "semantic"
+    assert payload["meta"]["command"] == "query.hybrid"
+
+
+def test_query_hybrid_command_renders_lower_bound_note_when_component_window_truncates(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target_repo = tmp_path / "registered-repo"
+    target_repo.mkdir()
+    container = bootstrap(workspace_root=workspace)
+
+    class StubRunHybridQueryUseCase:
+        def execute(self, _request: object) -> RunHybridQueryResult:
+            return build_hybrid_query_result(target_repo.resolve()).model_copy(
+                update={
+                    "diagnostics": HybridQueryDiagnostics(
+                        match_count=1,
+                        query_latency_ms=9,
+                        total_match_count=40,
+                        truncated=True,
+                        rank_constant=60,
+                        rank_window_size=50,
+                        total_match_count_is_lower_bound=True,
+                        lexical=HybridComponentQueryDiagnostics(
+                            match_count=2,
+                            total_match_count=40,
+                            query_latency_ms=4,
+                            truncated=True,
+                            contributed_result_count=1,
+                        ),
+                        semantic=HybridComponentQueryDiagnostics(
+                            match_count=3,
+                            total_match_count=6,
+                            query_latency_ms=5,
+                            truncated=False,
+                            contributed_result_count=1,
+                        ),
+                    )
+                }
+            )
+
+    container.run_hybrid_query = StubRunHybridQueryUseCase()
+
+    result = runner.invoke(
+        app,
+        ["query", "hybrid", "repo-123", "controller home route"],
+        obj=container,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Hybrid total match count is a lower bound" in result.stdout

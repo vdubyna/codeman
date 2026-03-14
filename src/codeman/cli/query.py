@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 
+from codeman.application.query.run_hybrid_query import HybridQueryError
 from codeman.application.query.run_lexical_query import LexicalQueryError
 from codeman.application.query.run_semantic_query import SemanticQueryError
 from codeman.bootstrap import BootstrapContainer
@@ -11,6 +12,9 @@ from codeman.cli.common import OutputFormat, build_command_meta, emit_json_respo
 from codeman.contracts.common import SuccessEnvelope
 from codeman.contracts.errors import ErrorDetail, FailureEnvelope
 from codeman.contracts.retrieval import (
+    HybridComponentQueryDiagnostics,
+    RunHybridQueryRequest,
+    RunHybridQueryResult,
     RunLexicalQueryRequest,
     RunLexicalQueryResult,
     RunSemanticQueryRequest,
@@ -27,7 +31,7 @@ def query_group() -> None:
 
 def _handle_query_error(
     *,
-    error: LexicalQueryError | SemanticQueryError,
+    error: LexicalQueryError | SemanticQueryError | HybridQueryError,
     output_format: OutputFormat,
     command_name: str,
 ) -> None:
@@ -74,7 +78,7 @@ def _resolve_query_text(
 
 
 def _result_blocks(
-    result: RunLexicalQueryResult | RunSemanticQueryResult,
+    result: RunLexicalQueryResult | RunSemanticQueryResult | RunHybridQueryResult,
 ) -> list[str]:
     return [
         "\n".join(
@@ -103,6 +107,27 @@ def _summary_line(
     if truncated:
         return f"{label} returned {result_count} of {total_count} results (truncated)"
     return f"{label} returned {result_count} results"
+
+
+def _hybrid_component_line(
+    *,
+    label: str,
+    diagnostics: HybridComponentQueryDiagnostics,
+) -> str:
+    return (
+        f"{label}: matches={diagnostics.match_count} total={diagnostics.total_match_count} "
+        f"latency={diagnostics.query_latency_ms} ms "
+        f"contributed={diagnostics.contributed_result_count}"
+    )
+
+
+def _hybrid_total_count_note(result: RunHybridQueryResult) -> str | None:
+    if not result.diagnostics.total_match_count_is_lower_bound:
+        return None
+    return (
+        "Hybrid total match count is a lower bound because one or more component "
+        "result windows were truncated before fusion."
+    )
 
 
 @app.command("lexical")
@@ -239,4 +264,92 @@ def semantic(
         lines.extend(_result_blocks(result))
     else:
         lines.append("No semantic matches found.")
+    typer.echo("\n".join(lines))
+
+
+@app.command("hybrid")
+def hybrid(
+    ctx: typer.Context,
+    repository_id: str,
+    query_text: str | None = typer.Argument(None, metavar="QUERY"),
+    query: str | None = typer.Option(
+        None,
+        "--query",
+        help="Explicit query text. Use this when the query starts with '-'.",
+    ),
+    output_format: OutputFormat = typer.Option(OutputFormat.TEXT, "--output-format"),
+) -> None:
+    """Run a hybrid retrieval query against the current repository build."""
+
+    from codeman.cli.app import get_container
+
+    resolved_query = _resolve_query_text(query_text=query_text, query=query)
+
+    typer.echo(
+        f"Running hybrid query for repository: {repository_id}",
+        err=True,
+    )
+    container: BootstrapContainer = get_container(ctx)
+    try:
+        result = container.run_hybrid_query.execute(
+            RunHybridQueryRequest(
+                repository_id=repository_id,
+                query_text=resolved_query,
+            ),
+        )
+    except HybridQueryError as error:
+        _handle_query_error(
+            error=error,
+            output_format=output_format,
+            command_name="query.hybrid",
+        )
+
+    envelope = SuccessEnvelope(
+        data=result,
+        meta=build_command_meta("query.hybrid", output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+        return
+
+    lines = [
+        _summary_line(
+            result_count=result.diagnostics.match_count,
+            total_count=result.diagnostics.total_match_count,
+            truncated=result.diagnostics.truncated,
+            label="Hybrid retrieval",
+        ),
+        f"Retrieval Mode: {result.retrieval_mode}",
+        f"Repository ID: {result.repository.repository_id}",
+        f"Snapshot ID: {result.snapshot.snapshot_id}",
+        f"Build ID: {result.build.build_id}",
+        f"Fusion Strategy: {result.build.fusion_strategy}",
+        f"Rank Constant: {result.build.rank_constant}",
+        f"Rank Window Size: {result.build.rank_window_size}",
+        f"Lexical Build ID: {result.build.lexical_build.build_id}",
+        f"Lexical Engine: {result.build.lexical_build.lexical_engine}",
+        f"Semantic Build ID: {result.build.semantic_build.build_id}",
+        f"Provider: {result.build.semantic_build.provider_id}",
+        f"Model: {result.build.semantic_build.model_id}",
+        f"Model Version: {result.build.semantic_build.model_version}",
+        f"Vector Engine: {result.build.semantic_build.vector_engine}",
+        (f"Semantic Config Fingerprint: {result.build.semantic_build.semantic_config_fingerprint}"),
+        f"Query: {result.query.text}",
+        f"Latency: {result.diagnostics.query_latency_ms} ms",
+        _hybrid_component_line(
+            label="Lexical Component",
+            diagnostics=result.diagnostics.lexical,
+        ),
+        _hybrid_component_line(
+            label="Semantic Component",
+            diagnostics=result.diagnostics.semantic,
+        ),
+    ]
+    if result.results:
+        lines.extend(_result_blocks(result))
+    else:
+        lines.append("No hybrid matches found.")
+    total_count_note = _hybrid_total_count_note(result)
+    if total_count_note is not None:
+        lines.append(total_count_note)
     typer.echo("\n".join(lines))

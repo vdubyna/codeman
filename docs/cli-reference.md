@@ -208,3 +208,118 @@ semantic build metadata under `data.build`:
   }
 }
 ```
+
+```bash
+uv run codeman query hybrid <repository-id> "controller home route"
+uv run codeman query hybrid <repository-id> "controller home route" --output-format json
+uv run codeman query hybrid <repository-id> --query="--query" --output-format json
+```
+
+`query hybrid` composes the current repository-scoped lexical and semantic query paths, requests a larger
+internal candidate window for fusion, and then returns the standard top-20 retrieval package after
+deterministic Reciprocal Rank Fusion (RRF).
+If either component baseline is unavailable for the latest repository snapshot and current semantic configuration,
+the command fails with `hybrid_component_baseline_missing` instead of pretending it ran full hybrid fusion.
+If the lexical and semantic component paths resolve different repository snapshots, the command fails with
+`hybrid_snapshot_mismatch` instead of fusing mixed-state evidence.
+
+Text output includes:
+- Retrieval mode plus repository, snapshot, synthetic hybrid build id, query, and latency metadata.
+- Fusion metadata: fusion strategy, rank constant, rank window size, lexical build id, semantic build id, and semantic provider/model attribution.
+- Per-component diagnostics for lexical and semantic retrieval, including latency, component match counts, and how many final fused results each component contributed.
+- One ranked block per result with stable `chunk_id`, relative path, span metadata, language/strategy, fused score, compact preview text, and a truthful explanation stating whether lexical evidence, semantic evidence, or both contributed to the final rank.
+
+JSON output keeps the standard success envelope on `stdout` and exposes the shared retrieval package shape, with
+hybrid fusion and component provenance nested under `data.build`, and per-component diagnostics nested under
+`data.diagnostics`:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "retrieval_mode": "hybrid",
+    "query": {
+      "text": "controller home route"
+    },
+    "repository": {
+      "repository_id": "repo-123",
+      "repository_name": "registered-repo"
+    },
+    "snapshot": {
+      "snapshot_id": "snapshot-123",
+      "revision_identity": "revision-abc",
+      "revision_source": "filesystem_fingerprint"
+    },
+    "build": {
+      "build_id": "hybrid-123abc456def",
+      "fusion_strategy": "rrf",
+      "rank_constant": 60,
+      "rank_window_size": 50,
+      "lexical_build": {
+        "build_id": "lexical-build-123",
+        "lexical_engine": "sqlite-fts5",
+        "tokenizer_spec": "unicode61 remove_diacritics 0 tokenchars '_'",
+        "indexed_fields": ["content", "relative_path"]
+      },
+      "semantic_build": {
+        "build_id": "semantic-build-123",
+        "provider_id": "local-hash",
+        "model_id": "fixture-local",
+        "model_version": "2026-03-14",
+        "vector_engine": "sqlite-exact",
+        "semantic_config_fingerprint": "semantic-fingerprint-123"
+      }
+    },
+    "results": [
+      {
+        "chunk_id": "chunk-123",
+        "relative_path": "src/Controller/HomeController.php",
+        "language": "php",
+        "strategy": "php_structure",
+        "rank": 1,
+        "score": 0.0323,
+        "start_line": 4,
+        "end_line": 10,
+        "start_byte": 32,
+        "end_byte": 180,
+        "content_preview": "final class HomeController { public function __invoke(): string { return 'home'; } }",
+        "explanation": "Fused hybrid rank from lexical and semantic evidence for this persisted chunk."
+      }
+    ],
+    "diagnostics": {
+      "match_count": 1,
+      "query_latency_ms": 9,
+      "total_match_count": 4,
+      "truncated": true,
+      "fusion_strategy": "rrf",
+      "rank_constant": 60,
+      "rank_window_size": 50,
+      "total_match_count_is_lower_bound": false,
+      "degraded": false,
+      "degraded_reason": null,
+      "lexical": {
+        "match_count": 2,
+        "query_latency_ms": 4,
+        "total_match_count": 2,
+        "truncated": false,
+        "contributed_result_count": 1
+      },
+      "semantic": {
+        "match_count": 3,
+        "query_latency_ms": 5,
+        "total_match_count": 6,
+        "truncated": true,
+        "contributed_result_count": 1
+      }
+    }
+  },
+  "meta": {
+    "command": "query.hybrid",
+    "output_format": "json"
+  }
+}
+```
+
+When `data.diagnostics.total_match_count_is_lower_bound` is `true`, the reported hybrid
+`total_match_count` is a truthful lower bound rather than an exact union size because at least one
+component retriever was truncated before fusion.

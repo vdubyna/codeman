@@ -8,6 +8,8 @@ from typing import Sequence
 from codeman.contracts.chunking import ChunkPayloadDocument, ChunkRecord
 from codeman.contracts.repository import RepositoryRecord, SnapshotRecord
 from codeman.contracts.retrieval import (
+    HybridQueryDiagnostics,
+    HybridRetrievalBuildContext,
     LexicalIndexBuildRecord,
     LexicalQueryDiagnostics,
     LexicalQueryMatch,
@@ -16,6 +18,7 @@ from codeman.contracts.retrieval import (
     RetrievalRepositoryContext,
     RetrievalResultItem,
     RetrievalSnapshotContext,
+    RunHybridQueryResult,
     RunLexicalQueryResult,
     RunSemanticQueryResult,
     SemanticIndexBuildRecord,
@@ -25,6 +28,7 @@ from codeman.contracts.retrieval import (
 )
 
 __all__ = [
+    "ResolvedHybridMatch",
     "ResolvedLexicalMatch",
     "ResolvedSemanticMatch",
     "RetrievalResultFormatter",
@@ -47,6 +51,16 @@ class ResolvedSemanticMatch:
     match: SemanticQueryMatch
     chunk: ChunkRecord
     payload: ChunkPayloadDocument
+
+
+@dataclass(slots=True, frozen=True)
+class ResolvedHybridMatch:
+    """One fused hybrid match resolved from already formatted component results."""
+
+    item: RetrievalResultItem
+    fused_score: float
+    lexical_rank: int | None
+    semantic_rank: int | None
 
 
 @dataclass(slots=True)
@@ -124,6 +138,47 @@ class RetrievalResultFormatter:
             diagnostics=diagnostics,
         )
 
+    def format_hybrid_results(
+        self,
+        *,
+        repository: RetrievalRepositoryContext | RepositoryRecord,
+        snapshot: RetrievalSnapshotContext | SnapshotRecord,
+        build: HybridRetrievalBuildContext,
+        query_text: str,
+        diagnostics: HybridQueryDiagnostics,
+        matches: Sequence[ResolvedHybridMatch],
+    ) -> RunHybridQueryResult:
+        """Build the shared hybrid retrieval package from fused match inputs."""
+
+        repository_context = (
+            repository
+            if isinstance(repository, RetrievalRepositoryContext)
+            else RetrievalRepositoryContext(
+                repository_id=repository.repository_id,
+                repository_name=repository.repository_name,
+            )
+        )
+        snapshot_context = (
+            snapshot
+            if isinstance(snapshot, RetrievalSnapshotContext)
+            else RetrievalSnapshotContext(
+                snapshot_id=snapshot.snapshot_id,
+                revision_identity=snapshot.revision_identity,
+                revision_source=snapshot.revision_source,
+            )
+        )
+        return RunHybridQueryResult(
+            query=RetrievalQueryMetadata(text=query_text),
+            repository=repository_context,
+            snapshot=snapshot_context,
+            build=build,
+            results=[
+                self._format_hybrid_match(index=index, resolved=match)
+                for index, match in enumerate(matches, start=1)
+            ],
+            diagnostics=diagnostics,
+        )
+
     def _format_match(self, resolved: ResolvedLexicalMatch) -> RetrievalResultItem:
         return RetrievalResultItem(
             chunk_id=resolved.match.chunk_id,
@@ -162,6 +217,27 @@ class RetrievalResultFormatter:
             explanation="Ranked by embedding similarity against the persisted semantic index.",
         )
 
+    def _format_hybrid_match(
+        self,
+        *,
+        index: int,
+        resolved: ResolvedHybridMatch,
+    ) -> RetrievalResultItem:
+        return RetrievalResultItem(
+            chunk_id=resolved.item.chunk_id,
+            relative_path=resolved.item.relative_path,
+            language=resolved.item.language,
+            strategy=resolved.item.strategy,
+            rank=index,
+            score=resolved.fused_score,
+            start_line=resolved.item.start_line,
+            end_line=resolved.item.end_line,
+            start_byte=resolved.item.start_byte,
+            end_byte=resolved.item.end_byte,
+            content_preview=resolved.item.content_preview,
+            explanation=self._build_hybrid_explanation(resolved),
+        )
+
     def _build_explanation(self, match: LexicalQueryMatch) -> str:
         contexts: list[str] = []
         path_context = self._context_if_highlighted(
@@ -182,6 +258,22 @@ class RetrievalResultFormatter:
         if len(contexts) == 1:
             return f"Matched lexical terms in {contexts[0]}."
         return f"Matched lexical terms in {contexts[0]} and {contexts[1]}."
+
+    @staticmethod
+    def _build_hybrid_explanation(resolved: ResolvedHybridMatch) -> str:
+        if resolved.lexical_rank is not None and resolved.semantic_rank is not None:
+            return "Fused hybrid rank from lexical and semantic evidence for this persisted chunk."
+        if resolved.lexical_rank is not None:
+            return (
+                "Fused hybrid rank from lexical evidence only; semantic retrieval returned no "
+                "match for this chunk."
+            )
+        if resolved.semantic_rank is not None:
+            return (
+                "Fused hybrid rank from semantic evidence only; lexical retrieval returned no "
+                "match for this chunk."
+            )
+        return "Fused hybrid rank from persisted retrieval evidence for this chunk."
 
     def _context_if_highlighted(
         self,

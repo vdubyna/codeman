@@ -1,5 +1,13 @@
 """Query application services."""
 
+from codeman.application.query.run_hybrid_query import (
+    HybridComponentBaselineMissingError,
+    HybridComponentUnavailableError,
+    HybridQueryError,
+    HybridQueryRepositoryNotRegisteredError,
+    HybridSnapshotMismatchError,
+    RunHybridQueryUseCase,
+)
 from codeman.application.query.run_lexical_query import (
     LexicalArtifactMissingError,
     LexicalBuildBaselineMissingError,
@@ -12,6 +20,12 @@ from codeman.application.query.run_lexical_query import (
 )
 
 __all__ = [
+    "HybridComponentBaselineMissingError",
+    "HybridComponentUnavailableError",
+    "HybridQueryError",
+    "HybridQueryRepositoryNotRegisteredError",
+    "HybridSnapshotMismatchError",
+    "RunHybridQueryUseCase",
     "LexicalArtifactMissingError",
     "LexicalBuildBaselineMissingError",
     "LexicalQueryChunkMetadataMissingError",
