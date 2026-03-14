@@ -33,3 +33,11 @@ uv run codeman index build-lexical <snapshot-id> --output-format json
 uv run codeman index reindex <repository-id>
 uv run codeman index reindex <repository-id> --output-format json
 ```
+
+## Query Commands
+
+```bash
+uv run codeman query lexical <repository-id> "HomeController"
+uv run codeman query lexical <repository-id> "HomeController" --output-format json
+uv run codeman query lexical <repository-id> --query="--output-format" --output-format json
+```

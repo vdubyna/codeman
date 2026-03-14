@@ -8,6 +8,7 @@ from pathlib import Path
 from codeman.application.indexing.build_chunks import BuildChunksUseCase
 from codeman.application.indexing.build_lexical_index import BuildLexicalIndexUseCase
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesUseCase
+from codeman.application.query.run_lexical_query import RunLexicalQueryUseCase
 from codeman.application.repo.create_snapshot import CreateSnapshotUseCase
 from codeman.application.repo.register_repository import RegisterRepositoryUseCase
 from codeman.application.repo.reindex_repository import ReindexRepositoryUseCase
@@ -18,6 +19,9 @@ from codeman.infrastructure.artifacts.filesystem_artifact_store import (
 from codeman.infrastructure.chunkers.chunker_registry import ChunkerRegistry
 from codeman.infrastructure.indexes.lexical.sqlite_fts5_builder import (
     SqliteFts5LexicalIndexBuilder,
+)
+from codeman.infrastructure.indexes.lexical.sqlite_fts5_query_engine import (
+    SqliteFts5LexicalQueryEngine,
 )
 from codeman.infrastructure.parsers.parser_registry import ParserRegistry
 from codeman.infrastructure.persistence.sqlite.engine import create_sqlite_engine
@@ -62,6 +66,7 @@ class BootstrapContainer:
     extract_source_files: ExtractSourceFilesUseCase
     build_chunks: BuildChunksUseCase
     build_lexical_index: BuildLexicalIndexUseCase
+    run_lexical_query: RunLexicalQueryUseCase
     reindex_repository: ReindexRepositoryUseCase
 
 
@@ -147,6 +152,13 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         index_build_store=index_build_store,
         indexing_config=config.indexing,
     )
+    run_lexical_query = RunLexicalQueryUseCase(
+        runtime_paths=runtime_paths,
+        repository_store=metadata_store,
+        snapshot_store=snapshot_store,
+        index_build_store=index_build_store,
+        lexical_query=SqliteFts5LexicalQueryEngine(),
+    )
     reindex_repository = ReindexRepositoryUseCase(
         runtime_paths=runtime_paths,
         repository_store=metadata_store,
@@ -176,5 +188,6 @@ def bootstrap(workspace_root: Path | None = None) -> BootstrapContainer:
         extract_source_files=extract_source_files,
         build_chunks=build_chunks,
         build_lexical_index=build_lexical_index,
+        run_lexical_query=run_lexical_query,
         reindex_repository=reindex_repository,
     )

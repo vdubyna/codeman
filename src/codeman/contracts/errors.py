@@ -48,5 +48,8 @@ class ErrorCode:
     CHUNK_PAYLOAD_CORRUPT = "chunk_payload_corrupt"
     INDEXED_BASELINE_MISSING = "indexed_baseline_missing"
     LEXICAL_INDEX_BUILD_FAILED = "lexical_index_build_failed"
+    LEXICAL_ARTIFACT_MISSING = "lexical_artifact_missing"
+    LEXICAL_BUILD_BASELINE_MISSING = "lexical_build_baseline_missing"
+    LEXICAL_QUERY_FAILED = "lexical_query_failed"
     REINDEX_FAILED = "reindex_failed"
     INTERNAL_ERROR = "internal_error"

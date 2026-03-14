@@ -83,3 +83,56 @@ class BuildLexicalIndexResult(BaseModel):
     snapshot: SnapshotRecord
     build: LexicalIndexBuildRecord
     diagnostics: LexicalIndexBuildDiagnostics
+
+
+class RunLexicalQueryRequest(BaseModel):
+    """Input DTO for lexical-query execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository_id: str
+    query_text: str
+
+
+class LexicalQueryMatch(BaseModel):
+    """One ranked lexical match returned from an indexed artifact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_id: str
+    relative_path: str
+    language: SourceLanguage
+    strategy: str
+    score: float
+    rank: int
+
+
+class LexicalQueryDiagnostics(BaseModel):
+    """Minimal diagnostics safe for CLI and JSON lexical query output."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    match_count: int = 0
+    query_latency_ms: int = 0
+
+
+class LexicalQueryResult(BaseModel):
+    """Adapter-facing lexical query payload before repository context is attached."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    matches: list[LexicalQueryMatch] = Field(default_factory=list)
+    diagnostics: LexicalQueryDiagnostics
+
+
+class RunLexicalQueryResult(BaseModel):
+    """Output DTO for successful lexical-query execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository: RepositoryRecord
+    snapshot: SnapshotRecord
+    build: LexicalIndexBuildRecord
+    query: str
+    matches: list[LexicalQueryMatch] = Field(default_factory=list)
+    diagnostics: LexicalQueryDiagnostics
