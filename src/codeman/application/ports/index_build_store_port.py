@@ -28,3 +28,6 @@ class IndexBuildStorePort(Protocol):
         indexing_config_fingerprint: str,
     ) -> LexicalIndexBuildRecord | None:
         """Return the latest lexical build for the repository's current snapshot/config pair."""
+
+    def get_by_build_id(self, build_id: str) -> LexicalIndexBuildRecord | None:
+        """Return one lexical build by its stable identifier."""

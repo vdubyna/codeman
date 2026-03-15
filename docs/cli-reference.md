@@ -232,6 +232,60 @@ JSON output keeps the standard success envelope on `stdout` and exposes a single
 }
 ```
 
+## Evaluation Commands
+
+```bash
+uv run codeman eval benchmark <repository-id> /path/to/golden_queries.json
+uv run codeman eval benchmark <repository-id> /path/to/golden_queries.json --retrieval-mode lexical
+uv run codeman eval benchmark <repository-id> /path/to/golden_queries.json --retrieval-mode semantic --output-format json
+uv run codeman eval benchmark <repository-id> /path/to/golden_queries.json --retrieval-mode hybrid --max-results 10
+```
+
+`eval benchmark` executes one authored benchmark dataset against exactly one retrieval mode for the
+current effective repository configuration. It reuses the existing lexical, semantic, or hybrid
+query workflows instead of inventing a separate retrieval path, and it records one benchmark-level
+run id that is reused for:
+
+- the SQLite `benchmark_runs` lifecycle row
+- the generated artifact under `.codeman/artifacts/benchmarks/<run-id>/run.json`
+- the configuration provenance row exposed through `config provenance show <run-id>`
+
+Supported options:
+
+- `--retrieval-mode {lexical|semantic|hybrid}` selects exactly one retrieval mode per benchmark run
+- `--max-results <1-100>` limits the ranked retrieval results retained for each benchmark case
+
+Progress behavior:
+
+- progress and phase lines are written only to `stderr`
+- JSON mode keeps `stdout` as one final success or failure envelope with no interleaved commentary
+- stable phase lines currently include dataset loading, baseline resolution, case execution, artifact writing, and provenance recording
+
+Text output includes:
+
+- run id, repository id, snapshot id, retrieval mode, and build id
+- dataset id, dataset version, and dataset fingerprint
+- case counts, truthful run status, timestamps, and benchmark artifact path
+
+JSON output keeps the standard success envelope on `stdout` and returns:
+
+- `run`
+- `repository`
+- `snapshot`
+- `build`
+- `dataset`
+
+Failure semantics:
+
+- benchmark dataset path, JSON, and schema failures reuse the stable dataset loader error codes from Story 4.1
+- missing selected retrieval baselines fail with `error.code = "benchmark_retrieval_baseline_missing"`
+- retrieval-path failures after execution starts fail with `error.code = "benchmark_retrieval_mode_unavailable"`
+- repository-not-registered failures keep the shared `repository_not_registered` contract
+
+The benchmark summary is intentionally compact in Story 4.2. Raw per-case evidence lives in the
+generated benchmark artifact; metrics, reports, run-to-run comparisons, and regression detection
+remain separate later stories.
+
 ## Config Commands
 
 All commands resolve configuration with the same deterministic precedence:

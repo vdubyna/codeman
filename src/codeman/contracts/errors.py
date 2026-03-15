@@ -79,4 +79,7 @@ class ErrorCode:
     BENCHMARK_DATASET_UNSUPPORTED_FORMAT = "benchmark_dataset_unsupported_format"
     BENCHMARK_DATASET_INVALID_JSON = "benchmark_dataset_invalid_json"
     BENCHMARK_DATASET_VALIDATION_FAILED = "benchmark_dataset_validation_failed"
+    BENCHMARK_EXECUTION_FAILED = "benchmark_execution_failed"
+    BENCHMARK_RETRIEVAL_BASELINE_MISSING = "benchmark_retrieval_baseline_missing"
+    BENCHMARK_RETRIEVAL_MODE_UNAVAILABLE = "benchmark_retrieval_mode_unavailable"
     INTERNAL_ERROR = "internal_error"

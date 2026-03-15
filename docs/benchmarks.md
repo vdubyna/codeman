@@ -10,8 +10,9 @@ This document owns human-facing benchmark and evaluation policy for `codeman`.
 
 - The current implementation provides retrieval and indexing foundations plus reserved `eval` and `compare` CLI groups.
 - The current implementation now includes strict benchmark dataset contracts plus a JSON-only dataset loader for authored golden-query inputs.
-- Full benchmark orchestration, provider-backed judge runs, and model-comparison workflows are planned but not fully implemented in the current codebase.
-- Benchmark execution, metrics, reports, comparisons, and regressions are still future work that starts in Story 4.2.
+- The current implementation now includes `eval benchmark`, which executes one authored dataset against exactly one indexed retrieval mode and records a truthful benchmark run lifecycle.
+- Benchmark execution persists a compact SQLite run row plus a raw artifact under `.codeman/artifacts/benchmarks/<run-id>/run.json`, and reuses one shared run id for configuration provenance.
+- Metrics calculation, benchmark reports, run comparison, regressions, provider-backed judge workflows, and model-comparison workflows remain future work for Stories 4.3-4.6 and beyond.
 - Documentation in this file should stay honest about what exists now versus what is still planned.
 
 ## Implemented Benchmark Dataset Schema
@@ -32,6 +33,16 @@ This document owns human-facing benchmark and evaluation policy for `codeman`.
 - Synthetic data must be reviewed, versioned, and explicitly promoted before it becomes a benchmark baseline.
 - LLM-as-a-judge output is an auxiliary evaluation signal, not the sole source of truth.
 - Benchmark comparisons should stay reproducible across runs by preserving dataset versions, configuration identity, and runtime metadata.
+
+## Implemented Benchmark Execution Surface
+
+- `eval benchmark <repository-id> <dataset-path>` is now the canonical execution command for Story 4.2.
+- Each benchmark run executes exactly one retrieval mode: `lexical`, `semantic`, or `hybrid`.
+- Preflight validation stays explicit: dataset load and validation run first, then baseline resolution for the selected retrieval mode, and only then is a `benchmark_runs` row created.
+- The benchmark row moves truthfully through `running -> succeeded` or `running -> failed`.
+- Dataset validation failures happen before execution starts and therefore do not create misleading completed benchmark rows.
+- Raw benchmark artifacts snapshot the normalized dataset inputs actually used for the run, including dataset id/version/fingerprint, authored judgments, ranked retrieval outputs, and query diagnostics needed for later metrics/reporting stories.
+- Story 4.2 deliberately does not calculate Recall@K, MRR, NDCG, reports, run comparisons, or regression judgments yet.
 
 ## Required Evaluation Metadata
 

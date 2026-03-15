@@ -70,6 +70,7 @@ class FakeSemanticIndexBuildStore:
     build: SemanticIndexBuildRecord | None
     initialized: int = 0
     seen_repository_queries: list[tuple[str, str]] = field(default_factory=list)
+    seen_build_queries: list[str] = field(default_factory=list)
 
     def initialize(self) -> None:
         self.initialized += 1
@@ -102,6 +103,12 @@ class FakeSemanticIndexBuildStore:
             or self.build.repository_id != repository_id
             or self.build.semantic_config_fingerprint != semantic_config_fingerprint
         ):
+            return None
+        return self.build
+
+    def get_by_build_id(self, build_id: str) -> SemanticIndexBuildRecord | None:
+        self.seen_build_queries.append(build_id)
+        if self.build is None or self.build.build_id != build_id:
             return None
         return self.build
 
@@ -424,10 +431,58 @@ def test_run_semantic_query_returns_ranked_matches_with_repository_context(
         "Ranked by embedding similarity against the persisted semantic index."
     )
     assert build_store.seen_repository_queries == [(repository.repository_id, fingerprint)]
+    assert build_store.seen_build_queries == []
     assert use_case.embedding_provider.seen_queries == [("local-hash", 4, "controller home route")]
     assert use_case.semantic_query.seen_requests == [
         ("semantic-build-123", [1.0, 0.0, 0.0, 0.0], 20)
     ]
+
+
+def test_run_semantic_query_uses_explicit_build_id_when_requested(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    repository_path.mkdir()
+    local_model_path = tmp_path / "local-model"
+    local_model_path.mkdir()
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(repository.repository_id, workspace)
+    semantic_config = build_semantic_config(local_model_path)
+    embedding_providers_config = build_embedding_providers_config(local_model_path)
+    fingerprint = build_semantic_indexing_fingerprint(
+        semantic_config,
+        embedding_providers_config,
+    )
+    build_store = FakeSemanticIndexBuildStore(
+        build=build_semantic_build_record(
+            workspace=workspace,
+            repository_id=repository.repository_id,
+            semantic_config_fingerprint=fingerprint,
+        )
+    )
+    chunks = build_chunk_records(workspace)
+    use_case = build_use_case(
+        workspace=workspace,
+        repository=repository,
+        snapshot=snapshot,
+        build_store=build_store,
+        chunks=chunks,
+        payloads=build_payloads(chunks),
+        semantic_config=semantic_config,
+        embedding_providers_config=embedding_providers_config,
+    )
+
+    result = use_case.execute(
+        RunSemanticQueryRequest(
+            repository_id=repository.repository_id,
+            query_text="controller home route",
+            build_id="semantic-build-123",
+        ),
+    )
+
+    assert result.build.build_id == "semantic-build-123"
+    assert build_store.seen_build_queries == ["semantic-build-123"]
+    assert build_store.seen_repository_queries == []
 
 
 def test_run_semantic_query_raises_when_repository_is_unknown(tmp_path: Path) -> None:

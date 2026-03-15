@@ -145,6 +145,23 @@ class SqliteSemanticIndexBuildStore(SemanticIndexBuildStorePort):
 
         return self._row_to_record(row)
 
+    def get_by_build_id(self, build_id: str) -> SemanticIndexBuildRecord | None:
+        """Return one semantic-index build by its stable identifier."""
+
+        if not self.database_path.exists():
+            return None
+
+        query = select(semantic_index_builds_table).where(
+            semantic_index_builds_table.c.id == build_id
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(query).mappings().first()
+
+        if row is None:
+            return None
+
+        return self._row_to_record(row)
+
     @staticmethod
     def _row_to_record(row: Any) -> SemanticIndexBuildRecord:
         """Convert a row mapping into a semantic index-build DTO."""

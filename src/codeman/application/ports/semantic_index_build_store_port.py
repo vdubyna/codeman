@@ -29,3 +29,6 @@ class SemanticIndexBuildStorePort(Protocol):
         semantic_config_fingerprint: str,
     ) -> SemanticIndexBuildRecord | None:
         """Return the latest semantic build for the repository's current snapshot/config pair."""
+
+    def get_by_build_id(self, build_id: str) -> SemanticIndexBuildRecord | None:
+        """Return one semantic build by its stable identifier."""

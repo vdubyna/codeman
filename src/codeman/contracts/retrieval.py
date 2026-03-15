@@ -248,6 +248,7 @@ class RunLexicalQueryRequest(BaseModel):
     repository_id: str
     query_text: str
     max_results: int = Field(default=20, gt=0, le=100)
+    build_id: str | None = None
     record_provenance: bool = True
 
 
@@ -259,6 +260,7 @@ class RunSemanticQueryRequest(BaseModel):
     repository_id: str
     query_text: str
     max_results: int = Field(default=20, gt=0, le=100)
+    build_id: str | None = None
     record_provenance: bool = True
 
 
@@ -270,6 +272,9 @@ class RunHybridQueryRequest(BaseModel):
     repository_id: str
     query_text: str
     max_results: int = Field(default=20, gt=0, le=100)
+    lexical_build_id: str | None = None
+    semantic_build_id: str | None = None
+    record_provenance: bool = True
 
 
 class CompareRetrievalModesRequest(BaseModel):

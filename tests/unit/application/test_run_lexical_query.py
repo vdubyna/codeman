@@ -61,6 +61,8 @@ class FakeSnapshotStore:
 class FakeIndexBuildStore:
     build: LexicalIndexBuildRecord | None
     initialized: int = 0
+    seen_repository_queries: list[tuple[str, str]] = field(default_factory=list)
+    seen_build_queries: list[str] = field(default_factory=list)
 
     def initialize(self) -> None:
         self.initialized += 1
@@ -82,11 +84,18 @@ class FakeIndexBuildStore:
         repository_id: str,
         indexing_config_fingerprint: str,
     ) -> LexicalIndexBuildRecord | None:
+        self.seen_repository_queries.append((repository_id, indexing_config_fingerprint))
         if (
             self.build is None
             or self.build.repository_id != repository_id
             or self.build.indexing_config_fingerprint != indexing_config_fingerprint
         ):
+            return None
+        return self.build
+
+    def get_by_build_id(self, build_id: str) -> LexicalIndexBuildRecord | None:
+        self.seen_build_queries.append(build_id)
+        if self.build is None or self.build.build_id != build_id:
             return None
         return self.build
 
@@ -330,6 +339,44 @@ def test_run_lexical_query_returns_ranked_matches_with_repository_context(
     assert result.diagnostics.query_latency_ms == 4
     assert result.diagnostics.total_match_count == 2
     assert result.diagnostics.truncated is False
+
+
+def test_run_lexical_query_uses_explicit_build_id_when_requested(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    repository_path.mkdir()
+    runtime_paths = build_runtime_paths(workspace)
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(repository.repository_id, workspace)
+    build = build_index_record(workspace, repository.repository_id)
+    build.index_path.parent.mkdir(parents=True, exist_ok=True)
+    build.index_path.touch()
+    chunks = build_chunk_records(workspace)
+    build_store = FakeIndexBuildStore(build=build)
+    use_case = RunLexicalQueryUseCase(
+        runtime_paths=runtime_paths,
+        repository_store=FakeRepositoryStore(repository=repository),
+        snapshot_store=FakeSnapshotStore(snapshot=snapshot),
+        index_build_store=build_store,
+        chunk_store=FakeChunkStore(chunks=chunks),
+        artifact_store=FakeArtifactStore(payloads=build_payloads(chunks)),
+        lexical_query=FakeLexicalQueryEngine(result=build_query_result()),
+        formatter=RetrievalResultFormatter(preview_char_limit=80),
+        indexing_config=IndexingConfig(),
+    )
+
+    result = use_case.execute(
+        RunLexicalQueryRequest(
+            repository_id=repository.repository_id,
+            query_text="bootValue",
+            build_id=build.build_id,
+        ),
+    )
+
+    assert result.build.build_id == build.build_id
+    assert build_store.seen_build_queries == [build.build_id]
+    assert build_store.seen_repository_queries == []
 
 
 def test_run_lexical_query_raises_when_repository_is_unknown(tmp_path: Path) -> None:

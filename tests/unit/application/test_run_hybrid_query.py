@@ -202,6 +202,30 @@ def test_run_hybrid_query_requests_internal_candidate_window_and_fuses_results()
     )
 
 
+def test_run_hybrid_query_forwards_explicit_component_build_ids() -> None:
+    lexical = StubRunLexicalQueryUseCase(result=build_lexical_result())
+    semantic = StubRunSemanticQueryUseCase(result=build_semantic_result())
+    use_case = RunHybridQueryUseCase(
+        run_lexical_query=lexical,
+        run_semantic_query=semantic,
+    )
+
+    use_case.execute(
+        RunHybridQueryRequest(
+            repository_id="repo-123",
+            query_text="controller home route",
+            lexical_build_id="lexical-build-123",
+            semantic_build_id="semantic-build-123",
+            record_provenance=False,
+        ),
+    )
+
+    assert lexical.seen_requests[0].build_id == "lexical-build-123"
+    assert lexical.seen_requests[0].record_provenance is False
+    assert semantic.seen_requests[0].build_id == "semantic-build-123"
+    assert semantic.seen_requests[0].record_provenance is False
+
+
 def test_run_hybrid_query_allows_zero_match_component_without_marking_degraded() -> None:
     lexical_result = build_lexical_result().model_copy(
         update={

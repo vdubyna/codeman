@@ -145,7 +145,7 @@ class RunHybridQueryUseCase:
             rank_constant=self.rank_constant,
             latency_ms=int((perf_counter() - started_at) * 1000),
         )
-        if self.record_run_provenance is None:
+        if not request.record_provenance or self.record_run_provenance is None:
             return composition.result
 
         provenance = self.record_run_provenance.execute(
@@ -181,6 +181,7 @@ class RunHybridQueryUseCase:
                     repository_id=request.repository_id,
                     query_text=request.query_text,
                     max_results=candidate_window,
+                    build_id=request.lexical_build_id,
                     record_provenance=False,
                 )
             )
@@ -210,6 +211,7 @@ class RunHybridQueryUseCase:
                     repository_id=request.repository_id,
                     query_text=request.query_text,
                     max_results=candidate_window,
+                    build_id=request.semantic_build_id,
                     record_provenance=False,
                 )
             )

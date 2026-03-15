@@ -9,6 +9,13 @@ from codeman.application.evaluation.load_benchmark_dataset import (
     BenchmarkDatasetValidationError,
     LoadBenchmarkDatasetUseCase,
 )
+from codeman.application.evaluation.run_benchmark import (
+    BenchmarkRunBaselineMissingError,
+    BenchmarkRunError,
+    BenchmarkRunModeUnavailableError,
+    BenchmarkRunRepositoryNotRegisteredError,
+    RunBenchmarkUseCase,
+)
 
 __all__ = [
     "BenchmarkDatasetInvalidJsonError",
@@ -17,5 +24,10 @@ __all__ = [
     "BenchmarkDatasetPathNotFoundError",
     "BenchmarkDatasetUnsupportedFormatError",
     "BenchmarkDatasetValidationError",
+    "BenchmarkRunBaselineMissingError",
+    "BenchmarkRunError",
+    "BenchmarkRunModeUnavailableError",
+    "BenchmarkRunRepositoryNotRegisteredError",
     "LoadBenchmarkDatasetUseCase",
+    "RunBenchmarkUseCase",
 ]

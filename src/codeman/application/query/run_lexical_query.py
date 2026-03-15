@@ -26,6 +26,7 @@ from codeman.contracts.configuration import (
 )
 from codeman.contracts.errors import ErrorCode
 from codeman.contracts.retrieval import (
+    LexicalIndexBuildRecord,
     LexicalQueryMatch,
     RunLexicalQueryRequest,
     RunLexicalQueryResult,
@@ -127,10 +128,7 @@ class RunLexicalQueryUseCase:
                 f"Repository is not registered: {request.repository_id}",
             )
 
-        build = self.index_build_store.get_latest_build_for_repository(
-            repository.repository_id,
-            build_indexing_fingerprint(self.indexing_config),
-        )
+        build = self._resolve_build(repository_id=repository.repository_id, request=request)
         if build is None:
             raise LexicalBuildBaselineMissingError(
                 "No lexical baseline exists yet for this repository and current configuration; "
@@ -185,6 +183,23 @@ class RunLexicalQueryUseCase:
             )
         )
         return result.model_copy(update={"run_id": provenance.run_id})
+
+    def _resolve_build(
+        self,
+        *,
+        repository_id: str,
+        request: RunLexicalQueryRequest,
+    ) -> LexicalIndexBuildRecord | None:
+        if request.build_id is not None:
+            build = self.index_build_store.get_by_build_id(request.build_id)
+            if build is None or build.repository_id != repository_id:
+                return None
+            return build
+
+        return self.index_build_store.get_latest_build_for_repository(
+            repository_id,
+            build_indexing_fingerprint(self.indexing_config),
+        )
 
     def _resolve_matches(
         self,

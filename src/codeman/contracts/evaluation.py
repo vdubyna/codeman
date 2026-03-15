@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Literal
@@ -11,8 +12,20 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from codeman.contracts.repository import SourceLanguage
+from codeman.contracts.retrieval import (
+    HybridRetrievalBuildContext,
+    LexicalRetrievalBuildContext,
+    RetrievalMode,
+    RetrievalRepositoryContext,
+    RetrievalSnapshotContext,
+    RunHybridQueryResult,
+    RunLexicalQueryResult,
+    RunSemanticQueryResult,
+    SemanticRetrievalBuildContext,
+)
 
 BENCHMARK_DATASET_SCHEMA_VERSION = "1"
+BENCHMARK_RUN_ARTIFACT_SCHEMA_VERSION = "1"
 
 
 def _normalize_required_text(value: str | None, *, field_name: str) -> str:
@@ -192,6 +205,124 @@ class LoadBenchmarkDatasetResult(BaseModel):
     summary: BenchmarkDatasetSummary
 
 
+class BenchmarkRunStatus(StrEnum):
+    """Truthful lifecycle states for one benchmark execution."""
+
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+BenchmarkRetrievalBuildContext = (
+    LexicalRetrievalBuildContext | SemanticRetrievalBuildContext | HybridRetrievalBuildContext
+)
+BenchmarkCaseRetrievalResult = RunLexicalQueryResult | RunSemanticQueryResult | RunHybridQueryResult
+
+
+class RunBenchmarkRequest(BaseModel):
+    """Input DTO for executing one benchmark dataset against one retrieval mode."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository_id: str
+    dataset_path: Path
+    retrieval_mode: RetrievalMode
+    max_results: int = Field(default=20, gt=0, le=100)
+
+
+class BenchmarkRunRecord(BaseModel):
+    """Compact persisted row and operator-facing summary for one benchmark run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    repository_id: str
+    snapshot_id: str
+    retrieval_mode: RetrievalMode
+    dataset_id: str
+    dataset_version: str
+    dataset_fingerprint: str
+    case_count: int = Field(ge=0)
+    completed_case_count: int = Field(ge=0)
+    status: BenchmarkRunStatus
+    artifact_path: Path | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    started_at: datetime
+    completed_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _validate_completion_state(self) -> BenchmarkRunRecord:
+        if self.completed_case_count > self.case_count:
+            raise ValueError("completed_case_count must not exceed case_count.")
+
+        if self.status == BenchmarkRunStatus.RUNNING and self.completed_at is not None:
+            raise ValueError("Running benchmark runs must not set completed_at.")
+
+        if self.status != BenchmarkRunStatus.RUNNING and self.completed_at is None:
+            raise ValueError("Completed benchmark runs must set completed_at.")
+
+        if (
+            self.status == BenchmarkRunStatus.SUCCEEDED
+            and self.completed_case_count != self.case_count
+        ):
+            raise ValueError("Succeeded benchmark runs must complete every benchmark case.")
+
+        return self
+
+
+class RunBenchmarkResult(BaseModel):
+    """Output DTO for successful or failed benchmark execution attempts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run: BenchmarkRunRecord
+    repository: RetrievalRepositoryContext
+    snapshot: RetrievalSnapshotContext
+    build: BenchmarkRetrievalBuildContext
+    dataset: BenchmarkDatasetSummary
+
+
+class BenchmarkRunFailure(BaseModel):
+    """Stable failure metadata persisted inside raw benchmark artifacts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    error_code: str
+    message: str
+    phase: str | None = None
+    failed_case_query_id: str | None = None
+    details: dict[str, Any] | None = None
+
+
+class BenchmarkCaseExecutionArtifact(BaseModel):
+    """Normalized raw output for one executed benchmark case."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query_id: str
+    source_kind: BenchmarkQuerySourceKind
+    judgments: list[BenchmarkRelevanceJudgment] = Field(default_factory=list)
+    result: BenchmarkCaseRetrievalResult
+
+
+class BenchmarkRunArtifactDocument(BaseModel):
+    """Raw benchmark artifact stored under the workspace artifact root."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = BENCHMARK_RUN_ARTIFACT_SCHEMA_VERSION
+    run: BenchmarkRunRecord
+    repository: RetrievalRepositoryContext
+    snapshot: RetrievalSnapshotContext
+    build: BenchmarkRetrievalBuildContext
+    dataset: BenchmarkDatasetDocument
+    dataset_summary: BenchmarkDatasetSummary
+    max_results: int = Field(gt=0, le=100)
+    cases: list[BenchmarkCaseExecutionArtifact] = Field(default_factory=list)
+    failure: BenchmarkRunFailure | None = None
+
+
 def build_benchmark_dataset_canonical_json(dataset: BenchmarkDatasetDocument) -> str:
     """Serialize the benchmark dataset deterministically for hashing and persistence."""
 
@@ -212,13 +343,23 @@ def build_benchmark_dataset_fingerprint(dataset: BenchmarkDatasetDocument) -> st
 
 __all__ = [
     "BENCHMARK_DATASET_SCHEMA_VERSION",
+    "BENCHMARK_RUN_ARTIFACT_SCHEMA_VERSION",
+    "BenchmarkCaseExecutionArtifact",
+    "BenchmarkCaseRetrievalResult",
     "BenchmarkDatasetDocument",
     "BenchmarkDatasetSummary",
     "BenchmarkQueryCase",
     "BenchmarkQuerySourceKind",
     "BenchmarkRelevanceJudgment",
+    "BenchmarkRetrievalBuildContext",
+    "BenchmarkRunArtifactDocument",
+    "BenchmarkRunFailure",
+    "BenchmarkRunRecord",
+    "BenchmarkRunStatus",
     "LoadBenchmarkDatasetRequest",
     "LoadBenchmarkDatasetResult",
+    "RunBenchmarkRequest",
+    "RunBenchmarkResult",
     "build_benchmark_dataset_canonical_json",
     "build_benchmark_dataset_fingerprint",
     "normalize_benchmark_relative_path",

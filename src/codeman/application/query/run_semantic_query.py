@@ -208,9 +208,10 @@ class RunSemanticQueryUseCase:
                 f"Semantic query configuration is invalid: {exc}",
             ) from exc
 
-        build = self.semantic_index_build_store.get_latest_build_for_repository(
-            repository.repository_id,
-            semantic_config_fingerprint,
+        build = self._resolve_build(
+            repository_id=repository.repository_id,
+            request=request,
+            semantic_config_fingerprint=semantic_config_fingerprint,
         )
         if build is None:
             raise SemanticBuildBaselineMissingError(
@@ -344,6 +345,24 @@ class RunSemanticQueryUseCase:
             )
         )
         return result.model_copy(update={"run_id": provenance.run_id})
+
+    def _resolve_build(
+        self,
+        *,
+        repository_id: str,
+        request: RunSemanticQueryRequest,
+        semantic_config_fingerprint: str,
+    ) -> SemanticIndexBuildRecord | None:
+        if request.build_id is not None:
+            build = self.semantic_index_build_store.get_by_build_id(request.build_id)
+            if build is None or build.repository_id != repository_id:
+                return None
+            return build
+
+        return self.semantic_index_build_store.get_latest_build_for_repository(
+            repository_id,
+            semantic_config_fingerprint,
+        )
 
     def _resolve_matches(
         self,

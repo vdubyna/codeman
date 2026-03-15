@@ -18,6 +18,8 @@ from codeman.application.config.save_retrieval_strategy_profile import (
 from codeman.application.config.show_retrieval_strategy_profile import (
     ShowRetrievalStrategyProfileUseCase,
 )
+from codeman.application.evaluation.load_benchmark_dataset import LoadBenchmarkDatasetUseCase
+from codeman.application.evaluation.run_benchmark import RunBenchmarkUseCase
 from codeman.application.indexing.build_chunks import BuildChunksUseCase
 from codeman.application.indexing.build_embeddings import BuildEmbeddingsStage
 from codeman.application.indexing.build_lexical_index import BuildLexicalIndexUseCase
@@ -64,6 +66,9 @@ from codeman.infrastructure.indexes.vector.sqlite_exact_query_engine import (
 )
 from codeman.infrastructure.parsers.parser_registry import ParserRegistry
 from codeman.infrastructure.persistence.sqlite.engine import create_sqlite_engine
+from codeman.infrastructure.persistence.sqlite.repositories.benchmark_run_repository import (
+    SqliteBenchmarkRunStore,
+)
 from codeman.infrastructure.persistence.sqlite.repositories.chunk_repository import (
     SqliteChunkStore,
 )
@@ -111,6 +116,7 @@ class BootstrapContainer:
     chunk_store: SqliteChunkStore
     index_build_store: SqliteIndexBuildStore
     semantic_index_build_store: SqliteSemanticIndexBuildStore
+    benchmark_run_store: SqliteBenchmarkRunStore
     retrieval_profile_store: SqliteRetrievalStrategyProfileStore
     run_provenance_store: SqliteRunProvenanceStore
     register_repository: RegisterRepositoryUseCase
@@ -123,6 +129,8 @@ class BootstrapContainer:
     run_semantic_query: RunSemanticQueryUseCase
     run_hybrid_query: RunHybridQueryUseCase
     compare_retrieval_modes: CompareRetrievalModesUseCase
+    load_benchmark_dataset: LoadBenchmarkDatasetUseCase
+    run_benchmark: RunBenchmarkUseCase
     reindex_repository: ReindexRepositoryUseCase
     save_retrieval_strategy_profile: SaveRetrievalStrategyProfileUseCase
     list_retrieval_strategy_profiles: ListRetrievalStrategyProfilesUseCase
@@ -216,6 +224,10 @@ def bootstrap(
         database_path=runtime_paths.metadata_database_path,
     )
     semantic_index_build_store = SqliteSemanticIndexBuildStore(
+        engine=snapshot_engine,
+        database_path=runtime_paths.metadata_database_path,
+    )
+    benchmark_run_store = SqliteBenchmarkRunStore(
         engine=snapshot_engine,
         database_path=runtime_paths.metadata_database_path,
     )
@@ -347,6 +359,24 @@ def bootstrap(
         record_run_provenance=record_run_provenance,
         formatter=RetrievalResultFormatter(),
     )
+    load_benchmark_dataset = LoadBenchmarkDatasetUseCase()
+    run_benchmark = RunBenchmarkUseCase(
+        runtime_paths=runtime_paths,
+        repository_store=metadata_store,
+        snapshot_store=snapshot_store,
+        index_build_store=index_build_store,
+        semantic_index_build_store=semantic_index_build_store,
+        benchmark_run_store=benchmark_run_store,
+        artifact_store=artifact_store,
+        load_benchmark_dataset=load_benchmark_dataset,
+        run_lexical_query=run_lexical_query,
+        run_semantic_query=run_semantic_query,
+        run_hybrid_query=run_hybrid_query,
+        indexing_config=config.indexing,
+        semantic_indexing_config=config.semantic_indexing,
+        embedding_providers_config=config.embedding_providers,
+        record_run_provenance=record_run_provenance,
+    )
     reindex_repository = ReindexRepositoryUseCase(
         runtime_paths=runtime_paths,
         repository_store=metadata_store,
@@ -385,6 +415,7 @@ def bootstrap(
         chunk_store=chunk_store,
         index_build_store=index_build_store,
         semantic_index_build_store=semantic_index_build_store,
+        benchmark_run_store=benchmark_run_store,
         retrieval_profile_store=retrieval_profile_store,
         run_provenance_store=run_provenance_store,
         register_repository=register_repository,
@@ -397,6 +428,8 @@ def bootstrap(
         run_semantic_query=run_semantic_query,
         run_hybrid_query=run_hybrid_query,
         compare_retrieval_modes=compare_retrieval_modes,
+        load_benchmark_dataset=load_benchmark_dataset,
+        run_benchmark=run_benchmark,
         reindex_repository=reindex_repository,
         save_retrieval_strategy_profile=save_retrieval_strategy_profile,
         list_retrieval_strategy_profiles=list_retrieval_strategy_profiles,

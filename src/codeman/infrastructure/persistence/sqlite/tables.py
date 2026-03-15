@@ -146,6 +146,26 @@ semantic_index_builds_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
+benchmark_runs_table = Table(
+    "benchmark_runs",
+    metadata,
+    Column("id", String(length=64), primary_key=True),
+    Column("repository_id", String(length=32), ForeignKey("repositories.id"), nullable=False),
+    Column("snapshot_id", String(length=32), ForeignKey("snapshots.id"), nullable=False),
+    Column("retrieval_mode", String(length=32), nullable=False),
+    Column("dataset_id", String(length=255), nullable=False),
+    Column("dataset_version", String(length=255), nullable=False),
+    Column("dataset_fingerprint", String(length=64), nullable=False),
+    Column("case_count", Integer(), nullable=False),
+    Column("completed_case_count", Integer(), nullable=False),
+    Column("status", String(length=32), nullable=False),
+    Column("artifact_path", String(length=2048), nullable=True),
+    Column("error_code", String(length=255), nullable=True),
+    Column("error_message", Text(), nullable=True),
+    Column("started_at", DateTime(timezone=True), nullable=False),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+)
+
 retrieval_strategy_profiles_table = Table(
     "retrieval_strategy_profiles",
     metadata,

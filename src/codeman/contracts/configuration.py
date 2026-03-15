@@ -98,6 +98,7 @@ RunProvenanceWorkflowType = Literal[
     "index.build-lexical",
     "index.build-semantic",
     "index.reindex",
+    "eval.benchmark",
     "query.lexical",
     "query.semantic",
     "query.hybrid",
@@ -125,6 +126,11 @@ class RunProvenanceWorkflowContext(BaseModel):
     result_snapshot_id: str | None = None
     lexical_build_id: str | None = None
     semantic_build_id: str | None = None
+    benchmark_dataset_id: str | None = None
+    benchmark_dataset_version: str | None = None
+    benchmark_dataset_fingerprint: str | None = None
+    retrieval_mode: str | None = None
+    benchmark_case_count: int | None = None
     compared_modes: list[ComparedRetrievalMode] = Field(default_factory=list)
     max_results: int | None = None
     rank_constant: int | None = None

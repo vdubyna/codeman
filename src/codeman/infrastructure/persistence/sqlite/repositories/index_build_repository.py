@@ -98,10 +98,7 @@ class SqliteIndexBuildStore(IndexBuildStorePort):
             .where(
                 snapshots_table.c.repository_id == repository_id,
                 snapshots_table.c.source_inventory_extracted_at.is_not(None),
-                (
-                    snapshots_table.c.chunk_generation_completed_at.is_not(None)
-                    | chunk_rows_exist
-                ),
+                (snapshots_table.c.chunk_generation_completed_at.is_not(None) | chunk_rows_exist),
             )
             .order_by(
                 desc(snapshots_table.c.created_at),
@@ -115,20 +112,41 @@ class SqliteIndexBuildStore(IndexBuildStorePort):
             if snapshot_row is None:
                 return None
 
-            row = connection.execute(
-                select(lexical_index_builds_table)
-                .where(
-                    lexical_index_builds_table.c.repository_id == repository_id,
-                    lexical_index_builds_table.c.snapshot_id == snapshot_row["id"],
-                    lexical_index_builds_table.c.indexing_config_fingerprint
-                    == indexing_config_fingerprint,
+            row = (
+                connection.execute(
+                    select(lexical_index_builds_table)
+                    .where(
+                        lexical_index_builds_table.c.repository_id == repository_id,
+                        lexical_index_builds_table.c.snapshot_id == snapshot_row["id"],
+                        lexical_index_builds_table.c.indexing_config_fingerprint
+                        == indexing_config_fingerprint,
+                    )
+                    .order_by(
+                        desc(lexical_index_builds_table.c.created_at),
+                        desc(lexical_index_builds_table.c.id),
+                    )
+                    .limit(1)
                 )
-                .order_by(
-                    desc(lexical_index_builds_table.c.created_at),
-                    desc(lexical_index_builds_table.c.id),
-                )
-                .limit(1)
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
+
+        if row is None:
+            return None
+
+        return self._row_to_record(row)
+
+    def get_by_build_id(self, build_id: str) -> LexicalIndexBuildRecord | None:
+        """Return one lexical-index build by its stable identifier."""
+
+        if not self.database_path.exists():
+            return None
+
+        query = select(lexical_index_builds_table).where(
+            lexical_index_builds_table.c.id == build_id
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(query).mappings().first()
 
         if row is None:
             return None
