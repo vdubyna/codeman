@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from codeman.contracts.evaluation import (
     BenchmarkDatasetDocument,
+    GenerateBenchmarkReportRequest,
     build_benchmark_dataset_canonical_json,
     build_benchmark_dataset_fingerprint,
 )
@@ -182,6 +183,19 @@ def test_benchmark_dataset_accepts_relevance_grade_above_previous_cap() -> None:
     dataset = BenchmarkDatasetDocument.model_validate(payload)
 
     assert dataset.cases[0].judgments[0].relevance_grade == 10
+
+
+def test_generate_benchmark_report_request_normalizes_run_id() -> None:
+    request = GenerateBenchmarkReportRequest.model_validate({"run_id": " run-123 "})
+
+    assert request.run_id == "run-123"
+
+
+def test_generate_benchmark_report_request_rejects_blank_run_id() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        GenerateBenchmarkReportRequest.model_validate({"run_id": "   "})
+
+    assert "run_id" in str(exc_info.value)
 
 
 @pytest.mark.parametrize("relevance_grade", [0, -1])

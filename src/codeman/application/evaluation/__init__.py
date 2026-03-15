@@ -9,6 +9,16 @@ from codeman.application.evaluation.calculate_benchmark_metrics import (
     BenchmarkRunNotFoundError,
     CalculateBenchmarkMetricsUseCase,
 )
+from codeman.application.evaluation.generate_report import (
+    BenchmarkReportArtifactCorruptError,
+    BenchmarkReportError,
+    BenchmarkReportMetricsArtifactMissingError,
+    BenchmarkReportProvenanceUnavailableError,
+    BenchmarkReportRawArtifactMissingError,
+    BenchmarkReportRunIncompleteError,
+    BenchmarkReportRunNotFoundError,
+    GenerateBenchmarkReportUseCase,
+)
 from codeman.application.evaluation.load_benchmark_dataset import (
     BenchmarkDatasetInvalidJsonError,
     BenchmarkDatasetLoadError,
@@ -37,6 +47,13 @@ __all__ = [
     "BenchmarkDatasetValidationError",
     "BenchmarkMetricsError",
     "BenchmarkMetricsInputShapeError",
+    "BenchmarkReportArtifactCorruptError",
+    "BenchmarkReportError",
+    "BenchmarkReportMetricsArtifactMissingError",
+    "BenchmarkReportProvenanceUnavailableError",
+    "BenchmarkReportRawArtifactMissingError",
+    "BenchmarkReportRunIncompleteError",
+    "BenchmarkReportRunNotFoundError",
     "BenchmarkRunBaselineMissingError",
     "BenchmarkRunError",
     "BenchmarkRunIncompleteError",
@@ -44,6 +61,7 @@ __all__ = [
     "BenchmarkRunRepositoryNotRegisteredError",
     "BenchmarkRunNotFoundError",
     "CalculateBenchmarkMetricsUseCase",
+    "GenerateBenchmarkReportUseCase",
     "LoadBenchmarkDatasetUseCase",
     "RunBenchmarkUseCase",
 ]

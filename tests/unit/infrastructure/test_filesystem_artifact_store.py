@@ -270,3 +270,14 @@ def test_write_and_read_benchmark_metrics_artifact_round_trip(tmp_path: Path) ->
     assert restored.run.metrics_artifact_path == (
         tmp_path / "benchmarks" / "run-123" / "metrics.json"
     )
+
+
+def test_write_and_read_benchmark_report_round_trip(tmp_path: Path) -> None:
+    artifact_store = FilesystemArtifactStore(tmp_path)
+    report_markdown = "# Benchmark Report: run-123\n\n- Recall@K: 1.0000\n"
+
+    destination = artifact_store.write_benchmark_report(report_markdown, run_id="run-123")
+    restored = artifact_store.read_benchmark_report(destination)
+
+    assert destination == tmp_path / "benchmarks" / "run-123" / "report.md"
+    assert restored == report_markdown

@@ -290,8 +290,62 @@ Failure semantics:
 - repository-not-registered failures keep the shared `repository_not_registered` contract
 
 The benchmark summary remains compact. Raw per-case evidence lives in `run.json`, while computed
-retrieval metrics and performance summaries live additively in `metrics.json`. Report generation,
-run-to-run comparisons, and regression detection remain separate later stories.
+retrieval metrics and performance summaries live additively in `metrics.json`. Benchmark report
+generation is a separate read-and-render workflow over those persisted artifacts. Run-to-run
+comparisons and regression detection remain separate later stories.
+
+```bash
+uv run codeman eval report <run-id>
+uv run codeman eval report <run-id> --output-format json
+```
+
+`eval report` generates a review-oriented benchmark report from already persisted benchmark
+evidence. It does not rerun retrieval, reload the authored dataset from disk, or recalculate
+metrics. Instead, it requires all of the following to exist and agree on the same run identity:
+
+- the benchmark row in SQLite
+- `.codeman/artifacts/benchmarks/<run-id>/run.json`
+- `.codeman/artifacts/benchmarks/<run-id>/metrics.json`
+- the stored configuration provenance row for the same `run_id`
+
+The generated local report artifact is written to:
+
+- `.codeman/artifacts/benchmarks/<run-id>/report.md`
+
+Progress behavior:
+
+- progress and phase lines are written only to `stderr`
+- JSON mode keeps `stdout` as one final success or failure envelope with no interleaved commentary
+- stable phase lines currently include benchmark evidence loading and report artifact writing
+
+Text output includes:
+
+- run id, repository id, snapshot id, retrieval mode, and build id
+- dataset identity and evaluated cutoff `k`
+- `Recall@K`, `MRR`, `NDCG@K`
+- configuration provenance identity such as `configuration_id` and `reuse_kind`
+- the generated report artifact path
+
+JSON output keeps the standard success envelope on `stdout` and returns:
+
+- `run`
+- `repository`
+- `snapshot`
+- `build`
+- `dataset`
+- `metrics`
+- `provenance`
+- `report_artifact_path`
+
+Failure semantics:
+
+- invalid report command input fails with `error.code = "input_validation_failed"` and exit code `2`
+- unknown benchmark runs fail with `error.code = "benchmark_report_run_not_found"`
+- missing `run.json` fails with `error.code = "benchmark_report_raw_artifact_missing"`
+- missing `metrics.json` fails with `error.code = "benchmark_report_metrics_artifact_missing"`
+- running, failed, or partial benchmark evidence fails with `error.code = "benchmark_report_incomplete"`
+- missing or inconsistent provenance fails with `error.code = "benchmark_report_provenance_unavailable"`
+- corrupt or mismatched persisted artifact identity fails with `error.code = "benchmark_report_artifact_corrupt"`
 
 ## Config Commands
 

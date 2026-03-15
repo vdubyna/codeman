@@ -21,6 +21,7 @@ from codeman.application.config.show_retrieval_strategy_profile import (
 from codeman.application.evaluation.calculate_benchmark_metrics import (
     CalculateBenchmarkMetricsUseCase,
 )
+from codeman.application.evaluation.generate_report import GenerateBenchmarkReportUseCase
 from codeman.application.evaluation.load_benchmark_dataset import LoadBenchmarkDatasetUseCase
 from codeman.application.evaluation.run_benchmark import RunBenchmarkUseCase
 from codeman.application.indexing.build_chunks import BuildChunksUseCase
@@ -134,6 +135,7 @@ class BootstrapContainer:
     compare_retrieval_modes: CompareRetrievalModesUseCase
     load_benchmark_dataset: LoadBenchmarkDatasetUseCase
     calculate_benchmark_metrics: CalculateBenchmarkMetricsUseCase
+    generate_benchmark_report: GenerateBenchmarkReportUseCase
     run_benchmark: RunBenchmarkUseCase
     reindex_repository: ReindexRepositoryUseCase
     save_retrieval_strategy_profile: SaveRetrievalStrategyProfileUseCase
@@ -371,6 +373,12 @@ def bootstrap(
         index_build_store=index_build_store,
         semantic_index_build_store=semantic_index_build_store,
     )
+    generate_benchmark_report = GenerateBenchmarkReportUseCase(
+        runtime_paths=runtime_paths,
+        benchmark_run_store=benchmark_run_store,
+        artifact_store=artifact_store,
+        show_run_provenance=show_run_provenance,
+    )
     run_benchmark = RunBenchmarkUseCase(
         runtime_paths=runtime_paths,
         repository_store=metadata_store,
@@ -442,6 +450,7 @@ def bootstrap(
         compare_retrieval_modes=compare_retrieval_modes,
         load_benchmark_dataset=load_benchmark_dataset,
         calculate_benchmark_metrics=calculate_benchmark_metrics,
+        generate_benchmark_report=generate_benchmark_report,
         run_benchmark=run_benchmark,
         reindex_repository=reindex_repository,
         save_retrieval_strategy_profile=save_retrieval_strategy_profile,

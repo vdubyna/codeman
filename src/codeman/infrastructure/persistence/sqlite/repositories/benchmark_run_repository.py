@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,21 @@ from codeman.application.ports.benchmark_run_store_port import BenchmarkRunStore
 from codeman.contracts.evaluation import BenchmarkRunRecord
 from codeman.infrastructure.persistence.sqlite.migrations import upgrade_database
 from codeman.infrastructure.persistence.sqlite.tables import benchmark_runs_table
+
+
+def _normalize_utc_datetime(value: datetime | str | None) -> datetime | None:
+    """Normalize SQLite datetime values to timezone-aware UTC datetimes."""
+
+    if value is None:
+        return None
+
+    candidate = value
+    if isinstance(candidate, str):
+        candidate = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+
+    if candidate.tzinfo is None:
+        return candidate.replace(tzinfo=UTC)
+    return candidate.astimezone(UTC)
 
 
 @dataclass(slots=True)
@@ -174,9 +190,9 @@ class SqliteBenchmarkRunStore(BenchmarkRunStorePort):
                 if row["metrics_artifact_path"] is not None
                 else None
             ),
-            metrics_computed_at=row["metrics_computed_at"],
+            metrics_computed_at=_normalize_utc_datetime(row["metrics_computed_at"]),
             error_code=row["error_code"],
             error_message=row["error_message"],
-            started_at=row["started_at"],
-            completed_at=row["completed_at"],
+            started_at=_normalize_utc_datetime(row["started_at"]),
+            completed_at=_normalize_utc_datetime(row["completed_at"]),
         )

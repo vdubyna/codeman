@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from codeman.contracts.configuration import RunConfigurationProvenanceRecord
 from codeman.contracts.repository import SourceLanguage
 from codeman.contracts.retrieval import (
     HybridRetrievalBuildContext,
@@ -388,6 +389,34 @@ class CalculateBenchmarkMetricsResult(BaseModel):
     metrics: BenchmarkMetricsSummary
 
 
+class GenerateBenchmarkReportRequest(BaseModel):
+    """Input DTO for generating one benchmark report from persisted evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str = Field(min_length=1)
+
+    @field_validator("run_id", mode="before")
+    @classmethod
+    def _normalize_run_id(cls, value: str | None) -> str:
+        return _normalize_required_text(value, field_name="run_id")
+
+
+class GenerateBenchmarkReportResult(BaseModel):
+    """Output DTO for deterministic benchmark report generation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run: BenchmarkRunRecord
+    repository: RetrievalRepositoryContext
+    snapshot: RetrievalSnapshotContext
+    build: BenchmarkRetrievalBuildContext
+    dataset: BenchmarkDatasetSummary
+    metrics: BenchmarkMetricsSummary
+    provenance: RunConfigurationProvenanceRecord
+    report_artifact_path: Path
+
+
 class RunBenchmarkResult(BaseModel):
     """Output DTO for successful or failed benchmark execution attempts."""
 
@@ -500,6 +529,8 @@ __all__ = [
     "BenchmarkRunStatus",
     "CalculateBenchmarkMetricsRequest",
     "CalculateBenchmarkMetricsResult",
+    "GenerateBenchmarkReportRequest",
+    "GenerateBenchmarkReportResult",
     "LoadBenchmarkDatasetRequest",
     "LoadBenchmarkDatasetResult",
     "RunBenchmarkRequest",

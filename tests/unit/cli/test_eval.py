@@ -7,9 +7,18 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from codeman.application.evaluation.calculate_benchmark_metrics import BenchmarkMetricsError
+from codeman.application.evaluation.generate_report import (
+    BenchmarkReportProvenanceUnavailableError,
+)
 from codeman.application.evaluation.run_benchmark import BenchmarkRunModeUnavailableError
 from codeman.bootstrap import bootstrap
 from codeman.cli.app import app
+from codeman.config.retrieval_profiles import RetrievalStrategyProfilePayload
+from codeman.contracts.configuration import (
+    ConfigurationReuseLineage,
+    RunConfigurationProvenanceRecord,
+    RunProvenanceWorkflowContext,
+)
 from codeman.contracts.evaluation import (
     BenchmarkAggregateMetrics,
     BenchmarkDatasetSummary,
@@ -19,6 +28,7 @@ from codeman.contracts.evaluation import (
     BenchmarkQueryLatencySummary,
     BenchmarkRunRecord,
     BenchmarkRunStatus,
+    GenerateBenchmarkReportResult,
     RunBenchmarkResult,
 )
 from codeman.contracts.retrieval import (
@@ -95,6 +105,84 @@ def build_benchmark_result(dataset_path: Path) -> RunBenchmarkResult:
             metrics_computed_at=datetime(2026, 3, 15, 9, 2, tzinfo=UTC),
             artifact_path=Path("/tmp/.codeman/artifacts/benchmarks/run-123/metrics.json"),
         ),
+    )
+
+
+def build_report_result(dataset_path: Path) -> GenerateBenchmarkReportResult:
+    return GenerateBenchmarkReportResult(
+        run=build_benchmark_result(dataset_path).run,
+        repository=RetrievalRepositoryContext(
+            repository_id="repo-123",
+            repository_name="registered-repo",
+        ),
+        snapshot=RetrievalSnapshotContext(
+            snapshot_id="snapshot-123",
+            revision_identity="revision-abc",
+            revision_source="filesystem_fingerprint",
+        ),
+        build=LexicalRetrievalBuildContext(
+            build_id="lexical-build-123",
+            indexing_config_fingerprint="index-fingerprint-123",
+            lexical_engine="sqlite-fts5",
+            tokenizer_spec="unicode61 remove_diacritics 0 tokenchars '_'",
+            indexed_fields=["content", "relative_path"],
+            build_duration_ms=42,
+        ),
+        dataset=BenchmarkDatasetSummary(
+            dataset_path=dataset_path,
+            schema_version="1",
+            dataset_id="fixture-benchmark",
+            dataset_version="2026-03-15",
+            case_count=2,
+            judgment_count=2,
+            dataset_fingerprint="f" * 64,
+        ),
+        metrics=BenchmarkMetricsSummary(
+            evaluated_at_k=20,
+            metrics=BenchmarkAggregateMetrics(
+                recall_at_k=0.75,
+                mrr=0.5,
+                ndcg_at_k=0.625,
+            ),
+            performance=BenchmarkPerformanceSummary(
+                query_latency=BenchmarkQueryLatencySummary(
+                    sample_count=2,
+                    min_ms=5,
+                    mean_ms=7.5,
+                    median_ms=7.5,
+                    p95_ms=10,
+                    max_ms=10,
+                ),
+                indexing=BenchmarkIndexingDurationSummary(
+                    lexical_build_duration_ms=42,
+                ),
+            ),
+            metrics_computed_at=datetime(2026, 3, 15, 9, 2, tzinfo=UTC),
+            artifact_path=Path("/tmp/.codeman/artifacts/benchmarks/run-123/metrics.json"),
+        ),
+        provenance=RunConfigurationProvenanceRecord(
+            run_id="run-123",
+            workflow_type="eval.benchmark",
+            repository_id="repo-123",
+            snapshot_id="snapshot-123",
+            configuration_id="cfg-123",
+            configuration_reuse=ConfigurationReuseLineage(
+                reuse_kind="ad_hoc",
+                effective_configuration_id="cfg-123",
+            ),
+            effective_config=RetrievalStrategyProfilePayload(),
+            workflow_context=RunProvenanceWorkflowContext(
+                lexical_build_id="lexical-build-123",
+                benchmark_dataset_id="fixture-benchmark",
+                benchmark_dataset_version="2026-03-15",
+                benchmark_dataset_fingerprint="f" * 64,
+                retrieval_mode="lexical",
+                benchmark_case_count=2,
+                max_results=20,
+            ),
+            created_at=datetime(2026, 3, 15, 9, 2, tzinfo=UTC),
+        ),
+        report_artifact_path=Path("/tmp/.codeman/artifacts/benchmarks/run-123/report.md"),
     )
 
 
@@ -290,3 +378,113 @@ def test_eval_benchmark_command_returns_json_failure_envelope_for_request_valida
     assert payload["error"]["message"] == "Benchmark command input is invalid."
     assert payload["error"]["details"][0]["loc"] == ["retrieval_mode"]
     assert payload["meta"]["command"] == "eval.benchmark"
+
+
+def test_eval_report_command_renders_text_summary(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    dataset_path = tmp_path / "dataset.json"
+    dataset_path.write_text("{}", encoding="utf-8")
+    container = bootstrap(workspace_root=workspace)
+
+    class StubGenerateBenchmarkReportUseCase:
+        def execute(
+            self, request: object, *, progress: object | None = None
+        ) -> GenerateBenchmarkReportResult:
+            assert request.run_id == "run-123"
+            if progress is not None:
+                progress("Loading benchmark evidence for run: run-123")
+            return build_report_result(dataset_path)
+
+    container.generate_benchmark_report = StubGenerateBenchmarkReportUseCase()
+
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "report",
+            "run-123",
+        ],
+        obj=container,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Benchmark report generated." in result.stdout
+    assert "Run ID: run-123" in result.stdout
+    assert "Retrieval Mode: lexical" in result.stdout
+    assert "Configuration ID: cfg-123" in result.stdout
+    assert "Report Path: /tmp/.codeman/artifacts/benchmarks/run-123/report.md" in result.stdout
+
+
+def test_eval_report_command_emits_clean_json_stdout(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    dataset_path = tmp_path / "dataset.json"
+    dataset_path.write_text("{}", encoding="utf-8")
+    container = bootstrap(workspace_root=workspace)
+
+    class StubGenerateBenchmarkReportUseCase:
+        def execute(
+            self, request: object, *, progress: object | None = None
+        ) -> GenerateBenchmarkReportResult:
+            if progress is not None:
+                progress("Writing benchmark report artifact for run: run-123")
+            return build_report_result(dataset_path)
+
+    container.generate_benchmark_report = StubGenerateBenchmarkReportUseCase()
+
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "report",
+            "run-123",
+            "--output-format",
+            "json",
+        ],
+        obj=container,
+    )
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 0, result.stdout
+    assert payload["ok"] is True
+    assert payload["data"]["run"]["run_id"] == "run-123"
+    assert (
+        payload["data"]["report_artifact_path"]
+        == "/tmp/.codeman/artifacts/benchmarks/run-123/report.md"
+    )
+    assert payload["data"]["provenance"]["configuration_id"] == "cfg-123"
+    assert payload["meta"]["command"] == "eval.report"
+
+
+def test_eval_report_command_returns_json_failure_envelope(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    container = bootstrap(workspace_root=workspace)
+
+    class StubGenerateBenchmarkReportUseCase:
+        def execute(self, request: object, *, progress: object | None = None) -> object:
+            raise BenchmarkReportProvenanceUnavailableError(
+                "Benchmark report cannot be generated because run provenance is unavailable.",
+                details={"run_id": "run-123"},
+            )
+
+    container.generate_benchmark_report = StubGenerateBenchmarkReportUseCase()
+
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "report",
+            "run-123",
+            "--output-format",
+            "json",
+        ],
+        obj=container,
+    )
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 79
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "benchmark_report_provenance_unavailable"
+    assert payload["meta"]["command"] == "eval.report"

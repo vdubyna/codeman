@@ -9,6 +9,7 @@ import typer
 from pydantic import ValidationError
 
 from codeman.application.evaluation.calculate_benchmark_metrics import BenchmarkMetricsError
+from codeman.application.evaluation.generate_report import BenchmarkReportError
 from codeman.application.evaluation.load_benchmark_dataset import BenchmarkDatasetLoadError
 from codeman.application.evaluation.run_benchmark import BenchmarkRunError
 from codeman.bootstrap import BootstrapContainer
@@ -20,7 +21,12 @@ from codeman.cli.common import (
 )
 from codeman.contracts.common import SuccessEnvelope
 from codeman.contracts.errors import ErrorCode
-from codeman.contracts.evaluation import RunBenchmarkRequest, RunBenchmarkResult
+from codeman.contracts.evaluation import (
+    GenerateBenchmarkReportRequest,
+    GenerateBenchmarkReportResult,
+    RunBenchmarkRequest,
+    RunBenchmarkResult,
+)
 
 app = typer.Typer(help="Benchmark and evaluation commands.", no_args_is_help=True)
 
@@ -77,11 +83,42 @@ def _render_text_output(result: RunBenchmarkResult) -> str:
     return "\n".join(lines)
 
 
+def _render_report_text_output(result: GenerateBenchmarkReportResult) -> str:
+    lines = [
+        "Benchmark report generated.",
+        f"Run ID: {result.run.run_id}",
+        f"Repository ID: {result.repository.repository_id}",
+        f"Snapshot ID: {result.snapshot.snapshot_id}",
+        f"Retrieval Mode: {result.run.retrieval_mode}",
+        f"Build ID: {result.build.build_id}",
+        f"Dataset ID: {result.dataset.dataset_id}",
+        f"Dataset Version: {result.dataset.dataset_version}",
+        f"Dataset Fingerprint: {result.dataset.dataset_fingerprint}",
+        f"Case Count: {result.run.case_count}",
+        f"Evaluated At K: {result.metrics.evaluated_at_k}",
+        f"Recall@K: {result.metrics.metrics.recall_at_k:.4f}",
+        f"MRR: {result.metrics.metrics.mrr:.4f}",
+        f"NDCG@K: {result.metrics.metrics.ndcg_at_k:.4f}",
+        f"Configuration ID: {result.provenance.configuration_id}",
+        f"Reuse Kind: {result.provenance.configuration_reuse.reuse_kind}",
+        f"Executed Provider: {_format_value(result.provenance.provider_id)}",
+        f"Executed Model: {_format_value(result.provenance.model_id)}",
+        f"Report Path: {result.report_artifact_path}",
+    ]
+    return "\n".join(lines)
+
+
 def _format_number(value: float | int | None) -> str:
     if value is None:
         return "-"
     if isinstance(value, float):
         return f"{value:.2f}"
+    return str(value)
+
+
+def _format_value(value: object | None) -> str:
+    if value in (None, ""):
+        return "-"
     return str(value)
 
 
@@ -170,3 +207,50 @@ def benchmark(
         return
 
     typer.echo(_render_text_output(result))
+
+
+@app.command("report")
+def report(
+    ctx: typer.Context,
+    run_id: str,
+    output_format: OutputFormat = typer.Option(OutputFormat.TEXT, "--output-format"),
+) -> None:
+    """Generate a reviewable benchmark report from persisted benchmark evidence."""
+
+    from codeman.cli.app import get_container
+
+    container: BootstrapContainer = get_container(ctx)
+    try:
+        request = GenerateBenchmarkReportRequest(run_id=run_id)
+        result = container.generate_benchmark_report.execute(
+            request,
+            progress=lambda line: typer.echo(line, err=True),
+        )
+    except ValidationError as error:
+        emit_failure_response(
+            error_code=ErrorCode.INPUT_VALIDATION_FAILED,
+            message="Benchmark report command input is invalid.",
+            details=_validation_error_details(error),
+            exit_code=2,
+            output_format=output_format,
+            command_name="eval.report",
+        )
+    except BenchmarkReportError as error:
+        emit_failure_response(
+            error_code=error.error_code,
+            message=error.message,
+            details=error.details,
+            exit_code=error.exit_code,
+            output_format=output_format,
+            command_name="eval.report",
+        )
+
+    envelope = SuccessEnvelope(
+        data=result,
+        meta=build_command_meta("eval.report", output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+        return
+
+    typer.echo(_render_report_text_output(result))

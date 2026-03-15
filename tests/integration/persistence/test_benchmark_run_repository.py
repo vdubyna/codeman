@@ -40,9 +40,7 @@ def build_record(
         lexical_index_duration_ms=42 if evaluated_at_k is not None else None,
         semantic_index_duration_ms=None,
         derived_index_duration_ms=None,
-        metrics_artifact_path=(
-            Path("/tmp/metrics.json") if evaluated_at_k is not None else None
-        ),
+        metrics_artifact_path=(Path("/tmp/metrics.json") if evaluated_at_k is not None else None),
         metrics_computed_at=(
             datetime(2026, 3, 15, 10, 6, tzinfo=UTC) if evaluated_at_k is not None else None
         ),
@@ -97,6 +95,9 @@ def test_sqlite_benchmark_run_store_round_trips_and_orders_records(tmp_path: Pat
     assert loaded.status == BenchmarkRunStatus.FAILED
     assert loaded.completed_case_count == 1
     assert loaded.error_code == "benchmark_execution_failed"
+    assert loaded.started_at == datetime(2026, 3, 15, 9, 0, tzinfo=UTC)
+    assert loaded.completed_at == datetime(2026, 3, 15, 9, 30, tzinfo=UTC)
     assert [record.run_id for record in listed] == ["run-002", "run-001"]
     assert listed[0].evaluated_at_k == 5
     assert listed[0].metrics_artifact_path == Path("/tmp/metrics.json")
+    assert listed[0].metrics_computed_at == datetime(2026, 3, 15, 10, 6, tzinfo=UTC)

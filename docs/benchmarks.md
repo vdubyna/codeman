@@ -13,7 +13,8 @@ This document owns human-facing benchmark and evaluation policy for `codeman`.
 - The current implementation now includes `eval benchmark`, which executes one authored dataset against exactly one indexed retrieval mode and records a truthful benchmark run lifecycle.
 - Benchmark execution persists a compact SQLite run row plus a raw artifact under `.codeman/artifacts/benchmarks/<run-id>/run.json`, reuses one shared run id for configuration provenance, and now stores additive metric outputs under `.codeman/artifacts/benchmarks/<run-id>/metrics.json`.
 - The current implementation now calculates and stores benchmark metrics automatically for successful benchmark runs, including `Recall@K`, `MRR`, `NDCG@K`, query latency summaries, and truthful indexing-duration summaries where available.
-- Benchmark reports, run comparison, regressions, provider-backed judge workflows, and model-comparison workflows remain future work for Stories 4.4-4.6 and beyond.
+- The current implementation now includes `eval report`, which renders a deterministic Markdown review artifact under `.codeman/artifacts/benchmarks/<run-id>/report.md` from the persisted run row, raw artifact, metrics artifact, and run provenance.
+- Run comparison, regressions, provider-backed judge workflows, and model-comparison workflows remain future work for Stories 4.5-4.6 and beyond.
 - Documentation in this file should stay honest about what exists now versus what is still planned.
 
 ## Implemented Benchmark Dataset Schema
@@ -51,6 +52,9 @@ This document owns human-facing benchmark and evaluation policy for `codeman`.
   - lexical and/or semantic build durations where those values were explicitly recorded on build metadata
 - `run.json` remains the raw execution evidence. Metrics are additive metadata and do not replace the meaning of the raw artifact.
 - If explicit build duration was unavailable on the relevant build record, the metrics layer leaves the indexing-duration field null instead of synthesizing a fake value.
+- `eval report <run-id>` now renders a concise review artifact from that persisted evidence. The
+  report includes benchmark identity, build/config provenance, aggregate metrics, and a compact
+  per-case appendix without duplicating the entire raw benchmark payload.
 
 ## Required Evaluation Metadata
 

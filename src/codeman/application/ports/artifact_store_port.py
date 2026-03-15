@@ -68,3 +68,14 @@ class ArtifactStorePort(Protocol):
         artifact_path: Path,
     ) -> BenchmarkMetricsArtifactDocument:
         """Load one previously persisted benchmark-metrics artifact."""
+
+    def write_benchmark_report(
+        self,
+        report_markdown: str,
+        *,
+        run_id: str,
+    ) -> Path:
+        """Persist one deterministic benchmark report artifact and return its path."""
+
+    def read_benchmark_report(self, artifact_path: Path) -> str:
+        """Load one previously persisted benchmark report artifact."""

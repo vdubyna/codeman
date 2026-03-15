@@ -248,3 +248,85 @@ def test_uv_run_eval_benchmark_supports_text_and_json_output(
     assert "Writing benchmark artifact for run:" in text_result.stderr
     assert "Calculating benchmark metrics for run:" in text_result.stderr
     assert "Recording benchmark provenance for run:" in json_result.stderr
+
+
+def test_uv_run_eval_report_supports_text_and_json_output(tmp_path: Path) -> None:
+    project_root, env, repository_id = prepare_benchmark_repository(
+        tmp_path=tmp_path,
+        scenario_name="report",
+        build_semantic=False,
+    )
+
+    benchmark_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "eval",
+            "benchmark",
+            repository_id,
+            str(FIXTURE_DATASET),
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+    benchmark_payload = json.loads(benchmark_result.stdout)
+    run_id = benchmark_payload["data"]["run"]["run_id"]
+
+    text_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "eval",
+            "report",
+            run_id,
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+    json_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "eval",
+            "report",
+            run_id,
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+
+    payload = json.loads(json_result.stdout)
+    report_artifact_path = Path(payload["data"]["report_artifact_path"])
+
+    assert benchmark_result.returncode == 0, benchmark_result.stderr
+    assert text_result.returncode == 0, text_result.stderr
+    assert json_result.returncode == 0, json_result.stderr
+    assert "Benchmark report generated." in text_result.stdout
+    assert f"Run ID: {run_id}" in text_result.stdout
+    assert "Retrieval Mode: lexical" in text_result.stdout
+    assert "Configuration ID:" in text_result.stdout
+    assert payload["ok"] is True
+    assert payload["data"]["run"]["run_id"] == run_id
+    assert payload["data"]["provenance"]["workflow_type"] == "eval.benchmark"
+    assert payload["meta"]["command"] == "eval.report"
+    assert report_artifact_path.exists()
+    assert report_artifact_path.name == "report.md"
+    assert "# Benchmark Report:" in report_artifact_path.read_text(encoding="utf-8")
+    assert "Loading benchmark evidence for run:" in text_result.stderr
+    assert "Writing benchmark report artifact for run:" in json_result.stderr

@@ -122,3 +122,21 @@ class FilesystemArtifactStore(ArtifactStorePort):
         return BenchmarkMetricsArtifactDocument.model_validate_json(
             artifact_path.read_text(encoding="utf-8"),
         )
+
+    def write_benchmark_report(
+        self,
+        report_markdown: str,
+        *,
+        run_id: str,
+    ) -> Path:
+        """Write one deterministic Markdown report for a benchmark run."""
+
+        destination = self.artifacts_root / "benchmarks" / run_id / "report.md"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(report_markdown, encoding="utf-8")
+        return destination
+
+    def read_benchmark_report(self, artifact_path: Path) -> str:
+        """Load one persisted Markdown benchmark report."""
+
+        return artifact_path.read_text(encoding="utf-8")
