@@ -245,6 +245,16 @@ def build_chunks(
         f"Chunks by strategy: {chunks_by_strategy}",
         f"Files using fallback: {result.diagnostics.fallback_file_count}",
         f"Skipped files: {result.diagnostics.skipped_file_count}",
+        (
+            "Parser cache reused/regenerated: "
+            f"{result.diagnostics.cache_summary.parser_entries_reused}"
+            f"/{result.diagnostics.cache_summary.parser_entries_regenerated}"
+        ),
+        (
+            "Chunk cache reused/regenerated: "
+            f"{result.diagnostics.cache_summary.chunk_entries_reused}"
+            f"/{result.diagnostics.cache_summary.chunk_entries_regenerated}"
+        ),
     ]
     if fallback_paths:
         lines.append(f"Fallback paths: {', '.join(fallback_paths)}")
@@ -346,6 +356,11 @@ def build_semantic(
         f"Embedding dimension: {result.diagnostics.embedding_dimension}",
         f"Embedding artifact: {result.diagnostics.embedding_documents_path}",
         f"Vector index path: {result.build.artifact_path}",
+        (
+            "Embedding cache reused/regenerated: "
+            f"{result.diagnostics.cache_summary.embedding_documents_reused}"
+            f"/{result.diagnostics.cache_summary.embedding_documents_regenerated}"
+        ),
         "Refreshed existing artifact: "
         f"{'yes' if result.diagnostics.refreshed_existing_artifact else 'no'}",
     ]
@@ -400,6 +415,16 @@ def reindex_repository(
                 f"Source files removed: {result.source_files_removed}",
                 f"Chunks reused: {result.chunks_reused}",
                 f"Chunks rebuilt: {result.chunks_rebuilt}",
+                (
+                    "Parser cache reused/regenerated: "
+                    f"{result.diagnostics.cache_summary.parser_entries_reused}"
+                    f"/{result.diagnostics.cache_summary.parser_entries_regenerated}"
+                ),
+                (
+                    "Chunk cache reused/regenerated: "
+                    f"{result.diagnostics.cache_summary.chunk_entries_reused}"
+                    f"/{result.diagnostics.cache_summary.chunk_entries_regenerated}"
+                ),
             ]
         )
     )

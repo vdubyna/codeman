@@ -13,9 +13,11 @@ from codeman.application.indexing.build_chunks import (
     build_chunk_id,
 )
 from codeman.application.ports.snapshot_port import ResolvedRevision
-from codeman.config.indexing import IndexingConfig
+from codeman.config.cache_identity import build_chunk_cache_key
+from codeman.config.indexing import IndexingConfig, build_indexing_fingerprint
 from codeman.contracts.chunking import BuildChunksRequest, ChunkPayloadDocument, ChunkRecord
 from codeman.contracts.repository import RepositoryRecord, SnapshotRecord, SourceFileRecord
+from codeman.infrastructure.cache.filesystem_cache_store import FilesystemCacheStore
 from codeman.infrastructure.chunkers.chunker_registry import ChunkerRegistry
 from codeman.infrastructure.parsers.parser_registry import ParserRegistry
 from codeman.runtime import build_runtime_paths
@@ -104,11 +106,7 @@ class FakeArtifactStore:
 
     def write_chunk_payload(self, payload: ChunkPayloadDocument, *, snapshot_id: str) -> Path:
         destination = (
-            self.artifacts_root
-            / "snapshots"
-            / snapshot_id
-            / "chunks"
-            / f"{payload.chunk_id}.json"
+            self.artifacts_root / "snapshots" / snapshot_id / "chunks" / f"{payload.chunk_id}.json"
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(payload.model_dump_json(indent=2), encoding="utf-8")
@@ -145,12 +143,7 @@ def build_snapshot_record(
         revision_identity="revision-abc",
         revision_source="filesystem_fingerprint",
         manifest_path=(
-            workspace
-            / ".codeman"
-            / "artifacts"
-            / "snapshots"
-            / "snapshot-123"
-            / "manifest.json"
+            workspace / ".codeman" / "artifacts" / "snapshots" / "snapshot-123" / "manifest.json"
         ),
         created_at=datetime.now(UTC),
         source_inventory_extracted_at=source_inventory_extracted_at,
@@ -255,6 +248,7 @@ def test_build_chunks_falls_back_per_file_and_writes_payload_artifacts(
         parser_registry=ParserRegistry(),
         chunker_registry=ChunkerRegistry(),
         artifact_store=artifact_store,
+        cache_store=FilesystemCacheStore(workspace / ".codeman" / "cache"),
         indexing_config=IndexingConfig(),
     )
 
@@ -267,6 +261,7 @@ def test_build_chunks_falls_back_per_file_and_writes_payload_artifacts(
         "javascript_fallback": 1,
         "javascript_structure": 1,
     }
+    assert result.diagnostics.cache_summary.chunk_entries_regenerated == 2
     broken_diagnostic = next(
         diagnostic
         for diagnostic in result.diagnostics.file_diagnostics
@@ -306,6 +301,7 @@ def test_build_chunks_requires_extracted_source_inventory(tmp_path: Path) -> Non
             artifacts_root=workspace / ".codeman" / "artifacts",
             payloads=[],
         ),
+        cache_store=FilesystemCacheStore(workspace / ".codeman" / "cache"),
         indexing_config=IndexingConfig(),
     )
 
@@ -346,6 +342,7 @@ def test_build_chunks_returns_zero_chunks_for_extracted_snapshot_with_no_support
             artifacts_root=workspace / ".codeman" / "artifacts",
             payloads=[],
         ),
+        cache_store=FilesystemCacheStore(workspace / ".codeman" / "cache"),
         indexing_config=IndexingConfig(),
     )
 
@@ -424,6 +421,7 @@ def test_build_chunks_falls_back_when_preferred_path_raises_unexpected_exception
             artifacts_root=workspace / ".codeman" / "artifacts",
             payloads=[],
         ),
+        cache_store=FilesystemCacheStore(workspace / ".codeman" / "cache"),
         indexing_config=IndexingConfig(),
     )
 
@@ -432,3 +430,209 @@ def test_build_chunks_falls_back_when_preferred_path_raises_unexpected_exception
     assert result.diagnostics.fallback_file_count == 1
     assert result.diagnostics.chunks_by_strategy == {"javascript_fallback": 1}
     assert result.diagnostics.file_diagnostics[0].mode == "fallback"
+
+
+def test_build_chunks_reuses_chunk_cache_on_second_run(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    (repository_path / "assets").mkdir(parents=True)
+    (repository_path / "assets" / "app.js").write_text(
+        'export function boot() {\n  return "ok";\n}\n',
+        encoding="utf-8",
+    )
+
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(repository.repository_id, workspace)
+    source_file = build_source_file_record(
+        snapshot_id=snapshot.snapshot_id,
+        repository_id=repository.repository_id,
+        relative_path="assets/app.js",
+        language="javascript",
+        content_hash="hash-app",
+    )
+    use_case = BuildChunksUseCase(
+        runtime_paths=build_runtime_paths(workspace),
+        repository_store=FakeRepositoryStore(repository=repository),
+        snapshot_store=FakeSnapshotStore(snapshot=snapshot),
+        source_inventory_store=FakeSourceInventoryStore(source_files=[source_file]),
+        chunk_store=FakeChunkStore(),
+        revision_resolver=FakeRevisionResolver(
+            revision=ResolvedRevision(
+                identity=snapshot.revision_identity,
+                source=snapshot.revision_source,
+            ),
+            seen_paths=[],
+        ),
+        parser_registry=ParserRegistry(),
+        chunker_registry=ChunkerRegistry(),
+        artifact_store=FakeArtifactStore(
+            artifacts_root=workspace / ".codeman" / "artifacts",
+            payloads=[],
+        ),
+        cache_store=FilesystemCacheStore(workspace / ".codeman" / "cache"),
+        indexing_config=IndexingConfig(),
+    )
+
+    first = use_case.execute(BuildChunksRequest(snapshot_id=snapshot.snapshot_id))
+    second = use_case.execute(BuildChunksRequest(snapshot_id=snapshot.snapshot_id))
+
+    assert first.diagnostics.cache_summary.chunk_entries_regenerated == 1
+    assert second.diagnostics.cache_summary.chunk_entries_reused == 1
+    assert second.diagnostics.cache_summary.chunk_entries_regenerated == 0
+    assert second.diagnostics.cache_summary.parser_entries_reused == 0
+
+
+def test_build_chunks_rebuilds_fallback_cache_when_structural_path_recovers(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    (repository_path / "assets").mkdir(parents=True)
+    (repository_path / "assets" / "app.js").write_text(
+        'export function boot() {\n  return "ok";\n}\n',
+        encoding="utf-8",
+    )
+
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(repository.repository_id, workspace)
+    source_file = build_source_file_record(
+        snapshot_id=snapshot.snapshot_id,
+        repository_id=repository.repository_id,
+        relative_path="assets/app.js",
+        language="javascript",
+        content_hash="hash-app",
+    )
+
+    class ExplodingParser:
+        def parse(self, *, source_text: str, relative_path: str) -> tuple[()]:
+            del source_text, relative_path
+            raise ValueError("boom")
+
+    class ExplodingParserRegistry:
+        def get(self, language: str) -> ExplodingParser:
+            del language
+            return ExplodingParser()
+
+    first = BuildChunksUseCase(
+        runtime_paths=build_runtime_paths(workspace),
+        repository_store=FakeRepositoryStore(repository=repository),
+        snapshot_store=FakeSnapshotStore(snapshot=snapshot),
+        source_inventory_store=FakeSourceInventoryStore(source_files=[source_file]),
+        chunk_store=FakeChunkStore(),
+        revision_resolver=FakeRevisionResolver(
+            revision=ResolvedRevision(
+                identity=snapshot.revision_identity,
+                source=snapshot.revision_source,
+            ),
+            seen_paths=[],
+        ),
+        parser_registry=ExplodingParserRegistry(),
+        chunker_registry=ChunkerRegistry(),
+        artifact_store=FakeArtifactStore(
+            artifacts_root=workspace / ".codeman" / "artifacts",
+            payloads=[],
+        ),
+        cache_store=FilesystemCacheStore(workspace / ".codeman" / "cache"),
+        indexing_config=IndexingConfig(),
+    ).execute(BuildChunksRequest(snapshot_id=snapshot.snapshot_id))
+
+    second = BuildChunksUseCase(
+        runtime_paths=build_runtime_paths(workspace),
+        repository_store=FakeRepositoryStore(repository=repository),
+        snapshot_store=FakeSnapshotStore(snapshot=snapshot),
+        source_inventory_store=FakeSourceInventoryStore(source_files=[source_file]),
+        chunk_store=FakeChunkStore(),
+        revision_resolver=FakeRevisionResolver(
+            revision=ResolvedRevision(
+                identity=snapshot.revision_identity,
+                source=snapshot.revision_source,
+            ),
+            seen_paths=[],
+        ),
+        parser_registry=ParserRegistry(),
+        chunker_registry=ChunkerRegistry(),
+        artifact_store=FakeArtifactStore(
+            artifacts_root=workspace / ".codeman" / "artifacts",
+            payloads=[],
+        ),
+        cache_store=FilesystemCacheStore(workspace / ".codeman" / "cache"),
+        indexing_config=IndexingConfig(),
+    ).execute(BuildChunksRequest(snapshot_id=snapshot.snapshot_id))
+
+    assert first.diagnostics.file_diagnostics[0].mode == "fallback"
+    assert second.diagnostics.file_diagnostics[0].mode == "structural"
+    assert second.diagnostics.chunks_by_strategy == {"javascript_structure": 1}
+    assert second.diagnostics.cache_summary.chunk_entries_reused == 0
+    assert second.diagnostics.cache_summary.chunk_entries_regenerated == 1
+    assert second.diagnostics.cache_summary.parser_entries_regenerated == 1
+
+
+def test_build_chunks_rebuilds_when_chunk_cache_is_corrupt_but_reuses_parser_cache(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    (repository_path / "assets").mkdir(parents=True)
+    (repository_path / "assets" / "app.js").write_text(
+        'export function boot() {\n  return "ok";\n}\n',
+        encoding="utf-8",
+    )
+
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(repository.repository_id, workspace)
+    source_file = build_source_file_record(
+        snapshot_id=snapshot.snapshot_id,
+        repository_id=repository.repository_id,
+        relative_path="assets/app.js",
+        language="javascript",
+        content_hash="hash-app",
+    )
+    use_case = BuildChunksUseCase(
+        runtime_paths=build_runtime_paths(workspace),
+        repository_store=FakeRepositoryStore(repository=repository),
+        snapshot_store=FakeSnapshotStore(snapshot=snapshot),
+        source_inventory_store=FakeSourceInventoryStore(source_files=[source_file]),
+        chunk_store=FakeChunkStore(),
+        revision_resolver=FakeRevisionResolver(
+            revision=ResolvedRevision(
+                identity=snapshot.revision_identity,
+                source=snapshot.revision_source,
+            ),
+            seen_paths=[],
+        ),
+        parser_registry=ParserRegistry(),
+        chunker_registry=ChunkerRegistry(),
+        artifact_store=FakeArtifactStore(
+            artifacts_root=workspace / ".codeman" / "artifacts",
+            payloads=[],
+        ),
+        cache_store=FilesystemCacheStore(workspace / ".codeman" / "cache"),
+        indexing_config=IndexingConfig(),
+    )
+
+    use_case.execute(BuildChunksRequest(snapshot_id=snapshot.snapshot_id))
+    chunk_cache_path = (
+        workspace
+        / ".codeman"
+        / "cache"
+        / "chunk"
+        / (
+            build_chunk_cache_key(
+                language=source_file.language,
+                relative_path=source_file.relative_path,
+                source_content_hash=source_file.content_hash,
+                indexing_config_fingerprint=build_indexing_fingerprint(IndexingConfig()),
+            )
+            + ".json"
+        )
+    )
+    chunk_cache_path.write_text("{invalid", encoding="utf-8")
+
+    result = use_case.execute(BuildChunksRequest(snapshot_id=snapshot.snapshot_id))
+
+    assert result.diagnostics.cache_summary.chunk_entries_reused == 0
+    assert result.diagnostics.cache_summary.chunk_entries_regenerated == 1
+    assert result.diagnostics.cache_summary.parser_entries_reused == 1

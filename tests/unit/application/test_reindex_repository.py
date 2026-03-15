@@ -20,6 +20,7 @@ from codeman.contracts.reindexing import (
     ReindexRunRecord,
 )
 from codeman.contracts.repository import RepositoryRecord, SnapshotRecord, SourceFileRecord
+from codeman.infrastructure.cache.filesystem_cache_store import FilesystemCacheStore
 from codeman.runtime import build_runtime_paths
 
 
@@ -188,6 +189,14 @@ class FakeArtifactStore:
         raise NotImplementedError
 
 
+@dataclass
+class StubRecordRunProvenance:
+    requests: list[object]
+
+    def execute(self, request: object) -> None:
+        self.requests.append(request)
+
+
 def build_repository_record(repository_path: Path) -> RepositoryRecord:
     now = datetime.now(UTC)
     return RepositoryRecord(
@@ -212,12 +221,7 @@ def build_snapshot_record(
         revision_identity="revision-abc",
         revision_source="filesystem_fingerprint",
         manifest_path=(
-            workspace
-            / ".codeman"
-            / "artifacts"
-            / "snapshots"
-            / "snapshot-123"
-            / "manifest.json"
+            workspace / ".codeman" / "artifacts" / "snapshots" / "snapshot-123" / "manifest.json"
         ),
         created_at=datetime.now(UTC),
         source_inventory_extracted_at=datetime.now(UTC),
@@ -389,6 +393,7 @@ def test_reindex_returns_noop_without_creating_new_snapshot(tmp_path: Path) -> N
         strategy="javascript_structure",
     )
     reindex_run_store = FakeReindexRunStore(created_runs=[])
+    provenance_recorder = StubRecordRunProvenance(requests=[])
     source_scanner = FakeSourceScanner(
         result=ScanSourceFilesResult(source_files=(source_file,), skipped_by_reason={}),
         seen_paths=[],
@@ -412,7 +417,9 @@ def test_reindex_returns_noop_without_creating_new_snapshot(tmp_path: Path) -> N
         parser_registry=object(),  # pragma: no cover - noop path never reaches this
         chunker_registry=object(),  # pragma: no cover - noop path never reaches this
         artifact_store=FakeArtifactStore(),
+        cache_store=FilesystemCacheStore(workspace / ".codeman" / "cache"),
         indexing_config=IndexingConfig(),
+        record_run_provenance=provenance_recorder,
     )
 
     result = use_case.execute(
@@ -426,5 +433,15 @@ def test_reindex_returns_noop_without_creating_new_snapshot(tmp_path: Path) -> N
     assert result.result_revision_identity == "revision-with-readme-change"
     assert result.source_files_reused == 1
     assert result.chunks_reused == 1
+    assert result.diagnostics.cache_summary.chunk_entries_reused == 0
     assert reindex_run_store.created_runs[0].change_reason == "no_change"
     assert source_scanner.seen_paths == [repository_path.resolve()]
+    assert len(provenance_recorder.requests) == 1
+    workflow_context = provenance_recorder.requests[0].workflow_context
+    assert workflow_context.noop is True
+    assert workflow_context.source_files_reused == 1
+    assert workflow_context.source_files_rebuilt == 0
+    assert workflow_context.source_files_removed == 0
+    assert workflow_context.chunks_reused == 1
+    assert workflow_context.chunks_rebuilt == 0
+    assert workflow_context.chunks_removed == 0

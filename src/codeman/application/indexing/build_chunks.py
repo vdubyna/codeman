@@ -12,6 +12,7 @@ from codeman.application.indexing.chunk_materializer import (
     build_chunk_id,
 )
 from codeman.application.ports.artifact_store_port import ArtifactStorePort
+from codeman.application.ports.cache_store_port import CacheStorePort
 from codeman.application.ports.chunk_store_port import ChunkStorePort
 from codeman.application.ports.chunker_port import ChunkerRegistryPort
 from codeman.application.ports.metadata_store_port import RepositoryMetadataStorePort
@@ -26,6 +27,7 @@ from codeman.application.provenance.record_run_provenance import (
     RecordRunConfigurationProvenanceUseCase,
 )
 from codeman.config.indexing import IndexingConfig, build_indexing_fingerprint
+from codeman.contracts.cache import CacheUsageSummary
 from codeman.contracts.chunking import (
     BuildChunksRequest,
     BuildChunksResult,
@@ -92,6 +94,19 @@ def _count_chunks_by_strategy(chunks: list[ChunkRecord]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _merge_cache_summaries(*summaries: CacheUsageSummary) -> CacheUsageSummary:
+    return CacheUsageSummary(
+        parser_entries_reused=sum(summary.parser_entries_reused for summary in summaries),
+        parser_entries_regenerated=sum(summary.parser_entries_regenerated for summary in summaries),
+        chunk_entries_reused=sum(summary.chunk_entries_reused for summary in summaries),
+        chunk_entries_regenerated=sum(summary.chunk_entries_regenerated for summary in summaries),
+        embedding_documents_reused=sum(summary.embedding_documents_reused for summary in summaries),
+        embedding_documents_regenerated=sum(
+            summary.embedding_documents_regenerated for summary in summaries
+        ),
+    )
+
+
 @dataclass(slots=True)
 class BuildChunksUseCase:
     """Generate and persist retrieval chunks for a snapshot."""
@@ -105,6 +120,7 @@ class BuildChunksUseCase:
     parser_registry: ParserRegistryPort
     chunker_registry: ChunkerRegistryPort
     artifact_store: ArtifactStorePort
+    cache_store: CacheStorePort
     indexing_config: IndexingConfig
     record_run_provenance: RecordRunConfigurationProvenanceUseCase | None = None
 
@@ -145,25 +161,29 @@ class BuildChunksUseCase:
             )
 
         created_at = datetime.now(UTC)
+        current_fingerprint = build_indexing_fingerprint(self.indexing_config)
         file_diagnostics: list[ChunkFileDiagnostic] = []
         generated_chunks: list[ChunkRecord] = []
+        cache_summaries: list[CacheUsageSummary] = []
         materializer = ChunkMaterializer(
             parser_registry=self.parser_registry,
             chunker_registry=self.chunker_registry,
             artifact_store=self.artifact_store,
+            cache_store=self.cache_store,
         )
 
         try:
             for source_file in source_files:
-                chunk_records, diagnostic = materializer.build_for_source_file(
+                source_result = materializer.build_for_source_file(
                     source_file=source_file,
                     repository_path=repository.canonical_path,
                     created_at=created_at,
+                    indexing_config_fingerprint=current_fingerprint,
                 )
-                generated_chunks.extend(chunk_records)
-                file_diagnostics.append(diagnostic)
+                generated_chunks.extend(source_result.chunk_records)
+                file_diagnostics.append(source_result.diagnostic)
+                cache_summaries.append(source_result.cache_summary)
             persisted_chunks = self.chunk_store.upsert_chunks(generated_chunks)
-            current_fingerprint = build_indexing_fingerprint(self.indexing_config)
             self.snapshot_store.mark_chunks_generated(
                 snapshot_id=snapshot.snapshot_id,
                 generated_at=created_at,
@@ -192,6 +212,7 @@ class BuildChunksUseCase:
                 1 for diagnostic in file_diagnostics if diagnostic.chunk_count == 0
             ),
             file_diagnostics=file_diagnostics,
+            cache_summary=_merge_cache_summaries(*cache_summaries),
         )
         snapshot = snapshot.model_copy(
             update={
@@ -207,7 +228,9 @@ class BuildChunksUseCase:
                     repository_id=repository.repository_id,
                     snapshot_id=snapshot.snapshot_id,
                     indexing_config_fingerprint=current_fingerprint,
-                    workflow_context=RunProvenanceWorkflowContext(),
+                    workflow_context=RunProvenanceWorkflowContext(
+                        cache_summary=diagnostics.cache_summary,
+                    ),
                 )
             )
             provenance_run_id = provenance.run_id

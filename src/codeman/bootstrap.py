@@ -45,6 +45,7 @@ from codeman.contracts.configuration import RetrievalStrategyProfileRecord
 from codeman.infrastructure.artifacts.filesystem_artifact_store import (
     FilesystemArtifactStore,
 )
+from codeman.infrastructure.cache.filesystem_cache_store import FilesystemCacheStore
 from codeman.infrastructure.chunkers.chunker_registry import ChunkerRegistry
 from codeman.infrastructure.embeddings.local_hash_provider import (
     DeterministicLocalHashEmbeddingProvider,
@@ -232,6 +233,7 @@ def bootstrap(
     )
     revision_resolver = GitRevisionResolver()
     artifact_store = FilesystemArtifactStore(runtime_paths.artifacts)
+    cache_store = FilesystemCacheStore(runtime_paths.cache)
     source_scanner = LocalRepositoryScanner()
     register_repository = RegisterRepositoryUseCase(
         runtime_paths=runtime_paths,
@@ -270,6 +272,7 @@ def bootstrap(
         parser_registry=ParserRegistry(),
         chunker_registry=ChunkerRegistry(),
         artifact_store=artifact_store,
+        cache_store=cache_store,
         indexing_config=config.indexing,
         record_run_provenance=record_run_provenance,
     )
@@ -292,6 +295,7 @@ def bootstrap(
         artifact_store=artifact_store,
         embedding_stage=BuildEmbeddingsStage(
             artifact_store=artifact_store,
+            cache_store=cache_store,
             embedding_provider=DeterministicLocalHashEmbeddingProvider(),
             semantic_indexing_config=config.semantic_indexing,
             embedding_providers_config=config.embedding_providers,
@@ -357,6 +361,7 @@ def bootstrap(
         parser_registry=ParserRegistry(),
         chunker_registry=ChunkerRegistry(),
         artifact_store=artifact_store,
+        cache_store=cache_store,
         indexing_config=config.indexing,
         record_run_provenance=record_run_provenance,
     )

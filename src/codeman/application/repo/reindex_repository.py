@@ -10,6 +10,7 @@ from pathlib import Path
 from codeman.application.indexing.chunk_materializer import ChunkMaterializer
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesUseCase
 from codeman.application.ports.artifact_store_port import ArtifactStorePort
+from codeman.application.ports.cache_store_port import CacheStorePort
 from codeman.application.ports.chunk_store_port import ChunkStorePort
 from codeman.application.ports.chunker_port import ChunkerRegistryPort
 from codeman.application.ports.metadata_store_port import RepositoryMetadataStorePort
@@ -31,6 +32,7 @@ from codeman.application.repo.create_snapshot import (
     CreateSnapshotUseCase,
 )
 from codeman.config.indexing import IndexingConfig, build_indexing_fingerprint
+from codeman.contracts.cache import CacheUsageSummary
 from codeman.contracts.configuration import (
     RecordRunConfigurationProvenanceRequest,
     RunProvenanceWorkflowContext,
@@ -185,6 +187,19 @@ def _is_now_unsupported(file_path: Path, relative_path: str) -> bool:
     return inspection.is_binary or classify_source_language(relative_path) is None
 
 
+def _merge_cache_summaries(*summaries: CacheUsageSummary) -> CacheUsageSummary:
+    return CacheUsageSummary(
+        parser_entries_reused=sum(summary.parser_entries_reused for summary in summaries),
+        parser_entries_regenerated=sum(summary.parser_entries_regenerated for summary in summaries),
+        chunk_entries_reused=sum(summary.chunk_entries_reused for summary in summaries),
+        chunk_entries_regenerated=sum(summary.chunk_entries_regenerated for summary in summaries),
+        embedding_documents_reused=sum(summary.embedding_documents_reused for summary in summaries),
+        embedding_documents_regenerated=sum(
+            summary.embedding_documents_regenerated for summary in summaries
+        ),
+    )
+
+
 @dataclass(slots=True)
 class ReindexRepositoryUseCase:
     """Create attributable re-index outcomes using a prior indexed baseline."""
@@ -202,6 +217,7 @@ class ReindexRepositoryUseCase:
     parser_registry: ParserRegistryPort
     chunker_registry: ChunkerRegistryPort
     artifact_store: ArtifactStorePort
+    cache_store: CacheStorePort
     indexing_config: IndexingConfig
     record_run_provenance: RecordRunConfigurationProvenanceUseCase | None = None
 
@@ -292,6 +308,7 @@ class ReindexRepositoryUseCase:
                 source_files_unchanged=len(preview_diff.unchanged),
                 source_files_reused=len(preview_diff.unchanged),
                 chunks_reused=len(baseline_chunks),
+                cache_summary=CacheUsageSummary(),
             )
             if self.record_run_provenance is not None:
                 self.record_run_provenance.execute(
@@ -305,6 +322,13 @@ class ReindexRepositoryUseCase:
                             previous_snapshot_id=baseline_snapshot.snapshot_id,
                             result_snapshot_id=baseline_snapshot.snapshot_id,
                             noop=True,
+                            source_files_reused=len(preview_diff.unchanged),
+                            source_files_rebuilt=0,
+                            source_files_removed=0,
+                            chunks_reused=len(baseline_chunks),
+                            chunks_rebuilt=0,
+                            chunks_removed=0,
+                            cache_summary=diagnostics.cache_summary,
                         ),
                     )
                 )
@@ -353,6 +377,7 @@ class ReindexRepositoryUseCase:
             parser_registry=self.parser_registry,
             chunker_registry=self.chunker_registry,
             artifact_store=self.artifact_store,
+            cache_store=self.cache_store,
         )
         baseline_by_path = {
             source_file.relative_path: source_file for source_file in baseline_source_files
@@ -363,6 +388,7 @@ class ReindexRepositoryUseCase:
 
         reused_chunks: list = []
         built_chunks: list = []
+        cache_summaries: list[CacheUsageSummary] = []
         reused_files = 0
         rebuilt_files = 0
         reused_chunk_count = 0
@@ -406,12 +432,14 @@ class ReindexRepositoryUseCase:
 
         try:
             for source_file in files_to_build:
-                chunk_records, _ = materializer.build_for_source_file(
+                source_result = materializer.build_for_source_file(
                     source_file=source_file,
                     repository_path=repository.canonical_path,
                     created_at=now,
+                    indexing_config_fingerprint=current_config_fingerprint,
                 )
-                built_chunks.extend(chunk_records)
+                built_chunks.extend(source_result.chunk_records)
+                cache_summaries.append(source_result.cache_summary)
                 rebuilt_files += 1
             self.chunk_store.upsert_chunks([*reused_chunks, *built_chunks])
             self.snapshot_store.mark_chunks_generated(
@@ -476,6 +504,7 @@ class ReindexRepositoryUseCase:
             chunks_rebuilt=len(built_chunks),
             chunks_removed=chunks_removed,
             chunks_invalidated_by_config=chunks_invalidated_by_config,
+            cache_summary=_merge_cache_summaries(*cache_summaries),
         )
         if self.record_run_provenance is not None:
             self.record_run_provenance.execute(
@@ -489,6 +518,13 @@ class ReindexRepositoryUseCase:
                         previous_snapshot_id=baseline_snapshot.snapshot_id,
                         result_snapshot_id=current_snapshot.snapshot_id,
                         noop=False,
+                        source_files_reused=reused_files,
+                        source_files_rebuilt=rebuilt_files,
+                        source_files_removed=len(diff.removed) + len(diff.newly_unsupported),
+                        chunks_reused=reused_chunk_count,
+                        chunks_rebuilt=len(built_chunks),
+                        chunks_removed=chunks_removed,
+                        cache_summary=diagnostics.cache_summary,
                     ),
                 )
             )

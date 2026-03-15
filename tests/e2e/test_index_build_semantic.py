@@ -172,12 +172,75 @@ def test_uv_run_index_build_semantic_supports_text_and_json_output(
     assert "Built semantic index: 8 documents" in text_result.stdout
     assert "Provider: local-hash (local)" in text_result.stdout
     assert "Vector engine: sqlite-exact" in text_result.stdout
+    assert "Embedding cache reused/regenerated: 0/8" in text_result.stdout
     assert payload["ok"] is True
     assert payload["data"]["provider"]["provider_id"] == "local-hash"
     assert payload["data"]["build"]["vector_engine"] == "sqlite-exact"
     assert payload["data"]["diagnostics"]["document_count"] == 8
+    assert payload["data"]["diagnostics"]["cache_summary"]["embedding_documents_reused"] == 0
+    assert payload["data"]["diagnostics"]["cache_summary"]["embedding_documents_regenerated"] == 8
     assert "Building semantic index for snapshot" in text_result.stderr
     assert "Building semantic index for snapshot" in json_result.stderr
+
+
+def test_uv_run_index_build_semantic_reports_embedding_cache_reuse_on_second_run(
+    tmp_path: Path,
+) -> None:
+    project_root, env, snapshot_id = prepare_chunked_repository(
+        tmp_path=tmp_path,
+        scenario_name="reuse",
+        configure_semantic=True,
+    )
+
+    first_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "index",
+            "build-semantic",
+            snapshot_id,
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+    second_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "index",
+            "build-semantic",
+            snapshot_id,
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+
+    first_payload = json.loads(first_result.stdout)
+    second_payload = json.loads(second_result.stdout)
+
+    assert first_result.returncode == 0, first_result.stderr
+    assert second_result.returncode == 0, second_result.stderr
+    assert (
+        first_payload["data"]["diagnostics"]["cache_summary"]["embedding_documents_regenerated"]
+        == 8
+    )
+    assert second_payload["data"]["diagnostics"]["cache_summary"]["embedding_documents_reused"] == 8
+    assert (
+        second_payload["data"]["diagnostics"]["cache_summary"]["embedding_documents_regenerated"]
+        == 0
+    )
 
 
 def test_uv_run_index_build_semantic_returns_stable_failure_when_provider_missing(

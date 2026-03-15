@@ -7,10 +7,7 @@ import subprocess
 from pathlib import Path
 
 FIXTURE_REPOSITORY = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "repositories"
-    / "mixed_stack_fixture"
+    Path(__file__).resolve().parents[1] / "fixtures" / "repositories" / "mixed_stack_fixture"
 )
 
 
@@ -180,3 +177,58 @@ def test_uv_run_index_reindex_supports_text_and_json_output(tmp_path: Path) -> N
     assert payload["data"]["chunks_rebuilt"] == 1
     assert "Re-indexing repository" in text_result.stderr
     assert "Re-indexing repository" in json_result.stderr
+
+
+def test_uv_run_index_reindex_records_reuse_counters_in_provenance(tmp_path: Path) -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    _, env, repository_id = prepare_reindex_scenario(
+        tmp_path=tmp_path,
+        scenario_name="provenance",
+    )
+
+    reindex_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "index",
+            "reindex",
+            repository_id,
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+    reindex_payload = json.loads(reindex_result.stdout)
+    provenance_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "config",
+            "provenance",
+            "show",
+            reindex_payload["data"]["run_id"],
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+    provenance_payload = json.loads(provenance_result.stdout)
+
+    assert reindex_result.returncode == 0, reindex_result.stderr
+    assert provenance_result.returncode == 0, provenance_result.stderr
+    assert provenance_payload["data"]["provenance"]["workflow_type"] == "index.reindex"
+    assert provenance_payload["data"]["provenance"]["workflow_context"]["noop"] is True
+    assert provenance_payload["data"]["provenance"]["workflow_context"]["source_files_reused"] == 5
+    assert provenance_payload["data"]["provenance"]["workflow_context"]["source_files_rebuilt"] == 0
+    assert provenance_payload["data"]["provenance"]["workflow_context"]["chunks_reused"] == 8
+    assert provenance_payload["data"]["provenance"]["workflow_context"]["chunks_rebuilt"] == 0

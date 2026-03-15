@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from codeman.contracts.cache import CacheUsageSummary
 from codeman.contracts.repository import RepositoryRecord, SnapshotRecord, SourceLanguage
 
 RetrievalMode = Literal["lexical", "semantic", "hybrid"]
@@ -211,6 +212,7 @@ class SemanticIndexBuildDiagnostics(BaseModel):
     embedding_dimension: int = 0
     embedding_documents_path: Path
     refreshed_existing_artifact: bool = False
+    cache_summary: CacheUsageSummary = Field(default_factory=CacheUsageSummary)
 
 
 class BuildLexicalIndexResult(BaseModel):

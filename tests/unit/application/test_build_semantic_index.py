@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -32,6 +33,7 @@ from codeman.contracts.retrieval import (
 from codeman.infrastructure.artifacts.filesystem_artifact_store import (
     FilesystemArtifactStore,
 )
+from codeman.infrastructure.cache.filesystem_cache_store import FilesystemCacheStore
 from codeman.infrastructure.embeddings.local_hash_provider import (
     DeterministicLocalHashEmbeddingProvider,
 )
@@ -230,6 +232,7 @@ def build_use_case(
         artifact_store=artifact_store,
         embedding_stage=BuildEmbeddingsStage(
             artifact_store=artifact_store,
+            cache_store=FilesystemCacheStore(runtime_paths.cache),
             embedding_provider=DeterministicLocalHashEmbeddingProvider(),
             semantic_indexing_config=semantic_config,
             embedding_providers_config=embedding_providers_config or EmbeddingProvidersConfig(),
@@ -350,6 +353,7 @@ def test_build_semantic_index_reads_payloads_in_deterministic_order_and_records_
         build_embedding_providers_config(local_model_path),
     )
     assert result.diagnostics.document_count == 2
+    assert result.diagnostics.cache_summary.embedding_documents_regenerated == 2
     with sqlite3.connect(result.build.artifact_path) as connection:
         stored_count = connection.execute(
             "SELECT COUNT(*) FROM semantic_vectors",
@@ -378,6 +382,199 @@ def test_build_semantic_index_requires_registered_snapshot(tmp_path: Path) -> No
 
     with pytest.raises(SemanticSnapshotNotFoundError):
         use_case.execute(BuildSemanticIndexRequest(snapshot_id="missing"))
+
+
+def test_build_semantic_index_reuses_embedding_cache_on_second_run(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    repository_path.mkdir()
+    local_model_path = tmp_path / "local-model"
+    local_model_path.mkdir()
+    runtime_paths = build_runtime_paths(workspace)
+    artifact_store = FilesystemArtifactStore(runtime_paths.artifacts)
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(repository.repository_id, workspace)
+    payload_path = artifact_store.write_chunk_payload(
+        ChunkPayloadDocument(
+            chunk_id="source-a:javascript_structure:1",
+            snapshot_id=snapshot.snapshot_id,
+            repository_id=repository.repository_id,
+            source_file_id="source-a",
+            relative_path="assets/app.js",
+            language="javascript",
+            strategy="javascript_structure",
+            source_content_hash="hash-source-a",
+            start_line=1,
+            end_line=3,
+            start_byte=0,
+            end_byte=42,
+            content='export function boot() { return "codeman"; }',
+        ),
+        snapshot_id=snapshot.snapshot_id,
+    )
+    use_case = build_use_case(
+        workspace=workspace,
+        repository=repository,
+        snapshot=snapshot,
+        chunks=[
+            build_chunk_record(
+                snapshot_id=snapshot.snapshot_id,
+                repository_id=repository.repository_id,
+                source_file_id="source-a",
+                relative_path="assets/app.js",
+                language="javascript",
+                strategy="javascript_structure",
+                payload_path=payload_path,
+                start_line=1,
+                start_byte=0,
+            ),
+        ],
+        semantic_config=build_semantic_config(local_model_path),
+        embedding_providers_config=build_embedding_providers_config(local_model_path),
+        artifact_store=artifact_store,
+        semantic_build_store=FakeSemanticIndexBuildStore(),
+    )
+
+    first = use_case.execute(BuildSemanticIndexRequest(snapshot_id=snapshot.snapshot_id))
+    second = use_case.execute(BuildSemanticIndexRequest(snapshot_id=snapshot.snapshot_id))
+
+    assert first.diagnostics.cache_summary.embedding_documents_regenerated == 1
+    assert second.diagnostics.cache_summary.embedding_documents_reused == 1
+
+
+def test_build_semantic_index_rebuilds_when_embedding_cache_is_corrupt(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    repository_path.mkdir()
+    local_model_path = tmp_path / "local-model"
+    local_model_path.mkdir()
+    runtime_paths = build_runtime_paths(workspace)
+    artifact_store = FilesystemArtifactStore(runtime_paths.artifacts)
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(repository.repository_id, workspace)
+    payload_path = artifact_store.write_chunk_payload(
+        ChunkPayloadDocument(
+            chunk_id="source-a:javascript_structure:1",
+            snapshot_id=snapshot.snapshot_id,
+            repository_id=repository.repository_id,
+            source_file_id="source-a",
+            relative_path="assets/app.js",
+            language="javascript",
+            strategy="javascript_structure",
+            source_content_hash="hash-source-a",
+            start_line=1,
+            end_line=3,
+            start_byte=0,
+            end_byte=42,
+            content='export function boot() { return "codeman"; }',
+        ),
+        snapshot_id=snapshot.snapshot_id,
+    )
+    use_case = build_use_case(
+        workspace=workspace,
+        repository=repository,
+        snapshot=snapshot,
+        chunks=[
+            build_chunk_record(
+                snapshot_id=snapshot.snapshot_id,
+                repository_id=repository.repository_id,
+                source_file_id="source-a",
+                relative_path="assets/app.js",
+                language="javascript",
+                strategy="javascript_structure",
+                payload_path=payload_path,
+                start_line=1,
+                start_byte=0,
+            ),
+        ],
+        semantic_config=build_semantic_config(local_model_path),
+        embedding_providers_config=build_embedding_providers_config(local_model_path),
+        artifact_store=artifact_store,
+        semantic_build_store=FakeSemanticIndexBuildStore(),
+    )
+
+    use_case.execute(BuildSemanticIndexRequest(snapshot_id=snapshot.snapshot_id))
+    cache_files = list((workspace / ".codeman" / "cache" / "embedding").glob("*.json"))
+    assert cache_files
+    cache_files[0].write_text("{invalid", encoding="utf-8")
+
+    result = use_case.execute(BuildSemanticIndexRequest(snapshot_id=snapshot.snapshot_id))
+
+    assert result.diagnostics.cache_summary.embedding_documents_reused == 0
+    assert result.diagnostics.cache_summary.embedding_documents_regenerated == 1
+
+
+def test_build_semantic_index_rebuilds_when_embedding_cache_vector_is_truncated(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    repository_path.mkdir()
+    local_model_path = tmp_path / "local-model"
+    local_model_path.mkdir()
+    runtime_paths = build_runtime_paths(workspace)
+    artifact_store = FilesystemArtifactStore(runtime_paths.artifacts)
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(repository.repository_id, workspace)
+    payload_path = artifact_store.write_chunk_payload(
+        ChunkPayloadDocument(
+            chunk_id="source-a:javascript_structure:1",
+            snapshot_id=snapshot.snapshot_id,
+            repository_id=repository.repository_id,
+            source_file_id="source-a",
+            relative_path="assets/app.js",
+            language="javascript",
+            strategy="javascript_structure",
+            source_content_hash="hash-source-a",
+            start_line=1,
+            end_line=3,
+            start_byte=0,
+            end_byte=42,
+            content='export function boot() { return "codeman"; }',
+        ),
+        snapshot_id=snapshot.snapshot_id,
+    )
+    use_case = build_use_case(
+        workspace=workspace,
+        repository=repository,
+        snapshot=snapshot,
+        chunks=[
+            build_chunk_record(
+                snapshot_id=snapshot.snapshot_id,
+                repository_id=repository.repository_id,
+                source_file_id="source-a",
+                relative_path="assets/app.js",
+                language="javascript",
+                strategy="javascript_structure",
+                payload_path=payload_path,
+                start_line=1,
+                start_byte=0,
+            ),
+        ],
+        semantic_config=build_semantic_config(local_model_path),
+        embedding_providers_config=build_embedding_providers_config(local_model_path),
+        artifact_store=artifact_store,
+        semantic_build_store=FakeSemanticIndexBuildStore(),
+    )
+
+    use_case.execute(BuildSemanticIndexRequest(snapshot_id=snapshot.snapshot_id))
+    cache_files = list((workspace / ".codeman" / "cache" / "embedding").glob("*.json"))
+    assert cache_files
+    payload = json.loads(cache_files[0].read_text(encoding="utf-8"))
+    payload["documents"][0]["embedding"] = payload["documents"][0]["embedding"][:-1]
+    cache_files[0].write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    result = use_case.execute(BuildSemanticIndexRequest(snapshot_id=snapshot.snapshot_id))
+
+    assert result.diagnostics.cache_summary.embedding_documents_reused == 0
+    assert result.diagnostics.cache_summary.embedding_documents_regenerated == 1
 
 
 def test_build_semantic_index_requires_explicit_local_provider_configuration(

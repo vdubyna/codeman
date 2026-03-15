@@ -144,6 +144,37 @@ def test_build_semantic_index_prefers_current_snapshot_after_reindex(
     assert latest_lookup.snapshot_id == refreshed.build.snapshot_id
 
 
+def test_build_semantic_index_reuses_embedding_cache_for_same_snapshot_and_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    shutil.copytree(FIXTURE_REPOSITORY, repository_path)
+    local_model_path = tmp_path / "local-model"
+    local_model_path.mkdir()
+    monkeypatch.setenv("CODEMAN_SEMANTIC_PROVIDER_ID", "local-hash")
+    monkeypatch.setenv("CODEMAN_SEMANTIC_LOCAL_MODEL_PATH", str(local_model_path))
+    monkeypatch.setenv("CODEMAN_SEMANTIC_MODEL_VERSION", "1")
+
+    first_container, _, snapshot_id = prepare_chunked_repository(
+        workspace=workspace,
+        repository_path=repository_path,
+    )
+    first = first_container.build_semantic_index.execute(
+        BuildSemanticIndexRequest(snapshot_id=snapshot_id),
+    )
+
+    second_container = bootstrap(workspace_root=workspace)
+    second = second_container.build_semantic_index.execute(
+        BuildSemanticIndexRequest(snapshot_id=snapshot_id),
+    )
+
+    assert first.diagnostics.cache_summary.embedding_documents_regenerated == 8
+    assert second.diagnostics.cache_summary.embedding_documents_reused == 8
+
+
 def test_build_semantic_index_is_configuration_aware_for_same_snapshot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -192,6 +223,8 @@ def test_build_semantic_index_is_configuration_aware_for_same_snapshot(
     assert stale_lookup is None
     assert first_fingerprint != second_fingerprint
     assert second_build.build.artifact_path != first_build.build.artifact_path
+    assert second_build.diagnostics.cache_summary.embedding_documents_reused == 0
+    assert second_build.diagnostics.cache_summary.embedding_documents_regenerated == 8
     assert latest_lookup is not None
     assert latest_lookup.semantic_config_fingerprint == second_fingerprint
     assert original_lookup is not None

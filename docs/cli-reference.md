@@ -30,6 +30,15 @@ uv run codeman index build-chunks <snapshot-id>
 uv run codeman index build-chunks <snapshot-id> --output-format json
 ```
 
+`index build-chunks` first validates that the live repository still matches the stored snapshot.
+Parser cache reuse is keyed by source content identity plus parser policy identity, and reusable
+chunk drafts are keyed by source content identity plus the current indexing fingerprint. Cache hits
+never mutate prior snapshot artifacts: reused chunk material is always re-materialized into the
+active snapshot namespace, and diagnostics report parser/chunk cache reuse vs regeneration counts.
+Cached fallback drafts are reused only when the preferred structural path is still unavailable for
+the current run; if structural parsing recovers, the file is rebuilt structurally and the fallback
+cache entry is replaced.
+
 ```bash
 uv run codeman index build-lexical <snapshot-id>
 uv run codeman index build-lexical <snapshot-id> --output-format json
@@ -48,6 +57,11 @@ uv run codeman index build-semantic <snapshot-id> --output-format json
 `index build-semantic` is local-first and requires an explicit local embedding configuration.
 Keep semantic workflow selection under `semantic_indexing` and provider-owned settings under
 `embedding_providers.local_hash`.
+Reusable embedding cache entries live under `.codeman/cache/` and are keyed by the current
+semantic fingerprint plus snapshot-independent normalized chunk identity. That identity includes
+chunk strategy, span metadata, source content identity, and chunk serialization version, so
+provider/model/version drift, vector-dimension changes, semantic fingerprint drift, or chunk
+content/serialization drift all force regeneration instead of stale reuse.
 
 Project defaults may include non-secret provider metadata:
 
@@ -106,6 +120,7 @@ Text output includes:
 - Repository, snapshot, and semantic build identifiers.
 - Provider and model attribution, including whether the provider stayed local.
 - Semantic configuration fingerprint, embedding dimension, embedding artifact path, and vector index path.
+- Embedding cache reuse vs regeneration counts for the current build.
 
 JSON output keeps the standard success envelope on `stdout` and returns:
 - `repository`
@@ -113,6 +128,12 @@ JSON output keeps the standard success envelope on `stdout` and returns:
 - `build`
 - `provider`
 - `diagnostics`
+
+For `index build-chunks`, `index build-semantic`, and `index reindex`, `diagnostics.cache_summary`
+contains machine-readable reuse/regeneration counters. The same cache summary is also stored in
+`config provenance show <run-id>` under `workflow_context.cache_summary`. Reindex provenance also
+persists `workflow_context.source_files_*` and `workflow_context.chunks_*` counters so no-op and
+baseline-clone runs stay truthful about what was reused versus rebuilt.
 
 Successful indexing workflows now also expose a stable `run_id` in `data` for:
 - `index build-chunks`
@@ -127,6 +148,14 @@ lines remain on `stderr`, so machine-readable JSON `stdout` stays clean.
 uv run codeman index reindex <repository-id>
 uv run codeman index reindex <repository-id> --output-format json
 ```
+
+`index reindex` preserves the existing immutable-baseline behavior for unchanged files: canonical
+chunk payloads are cloned forward from the latest eligible snapshot when source content and the
+current indexing fingerprint still match. When files must be rebuilt, parser/chunk cache reuse is
+allowed only when the current content and indexing identity still match; otherwise the affected
+artifacts are regenerated and diagnostics report that regeneration explicitly. `config provenance
+show <run-id>` keeps both cache counters and source/chunk reuse counters for the reindex run,
+including no-op executions that only cloned baseline work forward logically.
 
 ## Query Commands
 

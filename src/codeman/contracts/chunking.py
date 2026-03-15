@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from codeman.contracts.cache import CacheUsageSummary
 from codeman.contracts.repository import RepositoryRecord, SnapshotRecord, SourceLanguage
 
 
@@ -90,6 +91,7 @@ class ChunkGenerationDiagnostics(BaseModel):
     degraded_file_count: int = 0
     skipped_file_count: int = 0
     file_diagnostics: list[ChunkFileDiagnostic] = Field(default_factory=list)
+    cache_summary: CacheUsageSummary = Field(default_factory=CacheUsageSummary)
 
 
 class BuildChunksResult(BaseModel):

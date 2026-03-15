@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
+from codeman.contracts.cache import CacheUsageSummary
 from codeman.contracts.repository import RepositoryRecord
 
 ChangeReason = Literal[
@@ -44,6 +45,7 @@ class ReindexDiagnostics(BaseModel):
     chunks_rebuilt: int = 0
     chunks_removed: int = 0
     chunks_invalidated_by_config: int = 0
+    cache_summary: CacheUsageSummary = Field(default_factory=CacheUsageSummary)
 
 
 class ReindexRunRecord(BaseModel):

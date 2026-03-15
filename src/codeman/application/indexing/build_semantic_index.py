@@ -196,6 +196,7 @@ class BuildSemanticIndexUseCase:
                     model_version=build_record.model_version,
                     workflow_context=RunProvenanceWorkflowContext(
                         semantic_build_id=build_record.build_id,
+                        cache_summary=embeddings_result.cache_summary,
                     ),
                 )
             )
@@ -211,6 +212,7 @@ class BuildSemanticIndexUseCase:
                 embedding_dimension=vector_artifact.embedding_dimension,
                 embedding_documents_path=embeddings_result.embedding_documents_path,
                 refreshed_existing_artifact=vector_artifact.refreshed_existing_artifact,
+                cache_summary=embeddings_result.cache_summary,
             ),
         )
 

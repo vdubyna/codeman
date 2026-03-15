@@ -11,6 +11,7 @@ from codeman.config.retrieval_profiles import (
     RetrievalStrategyProfilePayload,
     normalize_retrieval_profile_selector,
 )
+from codeman.contracts.cache import CacheUsageSummary
 
 
 class RetrievalStrategyProfileRecord(BaseModel):
@@ -129,6 +130,13 @@ class RunProvenanceWorkflowContext(BaseModel):
     rank_constant: int | None = None
     rank_window_size: int | None = None
     noop: bool | None = None
+    source_files_reused: int | None = None
+    source_files_rebuilt: int | None = None
+    source_files_removed: int | None = None
+    chunks_reused: int | None = None
+    chunks_rebuilt: int | None = None
+    chunks_removed: int | None = None
+    cache_summary: CacheUsageSummary | None = None
 
 
 class RunConfigurationProvenanceRecord(BaseModel):

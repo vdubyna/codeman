@@ -307,6 +307,12 @@ def test_uv_run_provenance_tracks_profile_selected_config_identity_and_component
         == "2026-03-15"
     )
     assert (
+        build_alpha_provenance["data"]["provenance"]["workflow_context"]["cache_summary"][
+            "embedding_documents_regenerated"
+        ]
+        == 8
+    )
+    assert (
         query_alpha_provenance["data"]["provenance"]["workflow_context"]["semantic_build_id"]
         == build_semantic_alpha_payload["data"]["build"]["build_id"]
     )
@@ -448,9 +454,7 @@ def test_uv_run_provenance_marks_modified_profile_reuse_and_requires_matching_le
         == "modified_profile_reuse"
     )
     assert (
-        modified_semantic_provenance["data"]["provenance"]["configuration_reuse"][
-            "base_profile_id"
-        ]
+        modified_semantic_provenance["data"]["provenance"]["configuration_reuse"]["base_profile_id"]
         == stable_profile["data"]["profile"]["profile_id"]
     )
     assert (
