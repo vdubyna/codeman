@@ -277,6 +277,7 @@ JSON output keeps the standard success envelope on `stdout` and returns:
 
 Failure semantics:
 
+- invalid benchmark command input fails with `error.code = "input_validation_failed"` and exit code `2`; JSON mode still returns the standard failure envelope on `stdout`
 - benchmark dataset path, JSON, and schema failures reuse the stable dataset loader error codes from Story 4.1
 - missing selected retrieval baselines fail with `error.code = "benchmark_retrieval_baseline_missing"`
 - retrieval-path failures after execution starts fail with `error.code = "benchmark_retrieval_mode_unavailable"`

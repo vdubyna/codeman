@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import typer
 from pydantic import ValidationError
@@ -17,6 +18,7 @@ from codeman.cli.common import (
     emit_json_response,
 )
 from codeman.contracts.common import SuccessEnvelope
+from codeman.contracts.errors import ErrorCode
 from codeman.contracts.evaluation import RunBenchmarkRequest, RunBenchmarkResult
 
 app = typer.Typer(help="Benchmark and evaluation commands.", no_args_is_help=True)
@@ -46,6 +48,10 @@ def _render_text_output(result: RunBenchmarkResult) -> str:
         f"Artifact Path: {result.run.artifact_path}",
     ]
     return "\n".join(lines)
+
+
+def _validation_error_details(error: ValidationError) -> list[dict[str, Any]]:
+    return list(error.errors(include_url=False))
 
 
 @app.command("benchmark")
@@ -84,8 +90,14 @@ def benchmark(
             progress=lambda line: typer.echo(line, err=True),
         )
     except ValidationError as error:
-        typer.secho(str(error), err=True, fg=typer.colors.RED)
-        raise typer.Exit(code=2) from error
+        emit_failure_response(
+            error_code=ErrorCode.INPUT_VALIDATION_FAILED,
+            message="Benchmark command input is invalid.",
+            details=_validation_error_details(error),
+            exit_code=2,
+            output_format=output_format,
+            command_name="eval.benchmark",
+        )
     except BenchmarkDatasetLoadError as error:
         emit_failure_response(
             error_code=error.error_code,

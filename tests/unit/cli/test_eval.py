@@ -183,3 +183,36 @@ def test_eval_benchmark_command_returns_json_failure_envelope(tmp_path: Path) ->
     assert payload["ok"] is False
     assert payload["error"]["code"] == "benchmark_retrieval_mode_unavailable"
     assert payload["meta"]["command"] == "eval.benchmark"
+
+
+def test_eval_benchmark_command_returns_json_failure_envelope_for_request_validation(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    dataset_path = tmp_path / "dataset.json"
+    dataset_path.write_text("{}", encoding="utf-8")
+    container = bootstrap(workspace_root=workspace)
+
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "benchmark",
+            "repo-123",
+            str(dataset_path),
+            "--retrieval-mode",
+            "bogus",
+            "--output-format",
+            "json",
+        ],
+        obj=container,
+    )
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 2
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "input_validation_failed"
+    assert payload["error"]["message"] == "Benchmark command input is invalid."
+    assert payload["error"]["details"][0]["loc"] == ["retrieval_mode"]
+    assert payload["meta"]["command"] == "eval.benchmark"

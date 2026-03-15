@@ -15,6 +15,7 @@ from codeman.application.evaluation.load_benchmark_dataset import (
 from codeman.application.evaluation.run_benchmark import (
     BenchmarkRunBaselineMissingError,
     BenchmarkRunError,
+    BenchmarkRunInterruptedError,
     BenchmarkRunModeUnavailableError,
     RunBenchmarkUseCase,
 )
@@ -464,12 +465,15 @@ class StubBenchmarkRunStore:
     created: list[object] = field(default_factory=list)
     updated: list[object] = field(default_factory=list)
     initialized: bool = False
+    interrupt_after_create: BaseException | None = None
 
     def initialize(self) -> None:
         self.initialized = True
 
     def create_run(self, record: object) -> object:
         self.created.append(record)
+        if self.interrupt_after_create is not None:
+            raise self.interrupt_after_create
         return record
 
     def update_run(self, record: object) -> object:
@@ -477,6 +481,10 @@ class StubBenchmarkRunStore:
         return record
 
     def get_by_run_id(self, run_id: str) -> object | None:
+        records = [*self.updated, *self.created]
+        for record in records:
+            if getattr(record, "run_id", None) == run_id:
+                return record
         return None
 
     def list_by_repository_id(self, repository_id: str) -> list[object]:
@@ -555,6 +563,7 @@ def build_use_case(
     provenance: StubRunProvenanceUseCase | None = None,
     semantic_indexing_config: SemanticIndexingConfig | None = None,
     embedding_providers_config: EmbeddingProvidersConfig | None = None,
+    interrupt_after_create: BaseException | None = None,
 ) -> tuple[
     RunBenchmarkUseCase,
     StubBenchmarkRunStore,
@@ -562,7 +571,7 @@ def build_use_case(
     StubRunProvenanceUseCase,
 ]:
     runtime_paths = build_runtime_paths(workspace_root=tmp_path / "workspace")
-    benchmark_run_store = StubBenchmarkRunStore()
+    benchmark_run_store = StubBenchmarkRunStore(interrupt_after_create=interrupt_after_create)
     artifact_store = FilesystemArtifactStore(runtime_paths.artifacts)
     provenance_use_case = provenance or StubRunProvenanceUseCase()
     use_case = RunBenchmarkUseCase(
@@ -908,4 +917,41 @@ def test_run_benchmark_marks_run_failed_when_execution_is_interrupted(
     assert artifact_store.read_benchmark_run_artifact(
         benchmark_run_store.updated[-1].artifact_path
     ).failure.details == {"reason": "KeyboardInterrupt"}
+    assert provenance.requests == []
+
+
+def test_run_benchmark_finalizes_if_interrupted_immediately_after_run_creation(
+    tmp_path: Path,
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "dataset.json",
+        build_dataset_payload(query_ids=["case-1"]),
+    )
+    repository = build_repository_record(tmp_path)
+    snapshot = build_snapshot_record()
+    lexical_build = build_lexical_build(tmp_path)
+    use_case, benchmark_run_store, artifact_store, provenance = build_use_case(
+        tmp_path=tmp_path,
+        repository=repository,
+        snapshot=snapshot,
+        lexical_build=lexical_build,
+        interrupt_after_create=BenchmarkRunInterruptedError(details={"reason": "SIGINT"}),
+    )
+
+    with pytest.raises(BenchmarkRunInterruptedError) as exc_info:
+        use_case.execute(
+            RunBenchmarkRequest(
+                repository_id="repo-123",
+                dataset_path=dataset_path,
+                retrieval_mode="lexical",
+            )
+        )
+
+    assert exc_info.value.details == {"reason": "SIGINT"}
+    assert benchmark_run_store.created[0].status == BenchmarkRunStatus.RUNNING
+    assert benchmark_run_store.updated[-1].status == BenchmarkRunStatus.FAILED
+    assert benchmark_run_store.updated[-1].completed_case_count == 0
+    assert artifact_store.read_benchmark_run_artifact(
+        benchmark_run_store.updated[-1].artifact_path
+    ).failure.details == {"reason": "SIGINT"}
     assert provenance.requests == []

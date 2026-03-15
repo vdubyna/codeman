@@ -307,6 +307,7 @@ Codex GPT-5
 - 2026-03-15: Loaded Epic 4, PRD, architecture, current benchmark policy/docs, Story 4.1 learnings, current eval/query/provenance code, and recent git history to derive benchmark-execution guardrails.
 - 2026-03-15: Implemented benchmark execution orchestration, lifecycle persistence, CLI wiring, benchmark artifacts, provenance updates, and mirrored automated coverage for Story 4.2.
 - 2026-03-15: Addressed post-review benchmark truthfulness gaps (pinned builds, interruption finalization, semantic/hybrid coverage) and revalidated the full regression suite (`320 passed`).
+- 2026-03-15: Addressed second-round review findings by closing the run-creation interrupt race and restoring JSON failure envelopes for benchmark request validation errors, then revalidated the story and full regression suite.
 
 ### Implementation Plan
 
@@ -320,7 +321,9 @@ Codex GPT-5
 - Extended benchmark/evaluation contracts, runtime artifact seams, SQLite metadata, and query build-selection controls so benchmark cases stay pinned to the preflight-resolved lexical/semantic baselines across long-running executions.
 - Finalized interrupted benchmark runs truthfully by persisting `failed` status and failed artifacts for started runs instead of leaving orphaned `running` rows after `KeyboardInterrupt`/signal-driven interruption paths.
 - Expanded unit and e2e coverage for semantic and hybrid benchmark execution, explicit build pinning, and hybrid no-nested-provenance dispatch behavior.
-- Validated the change set with `ruff check .`, `ruff format --check` on all story-touched Python files, focused post-format benchmark regression coverage (`19 passed`), and the full repository test suite (`320 passed`).
+- Closed the remaining run-start interrupt race by entering the interrupt-protected section before run creation and finalizing only if the benchmark row was actually persisted.
+- Restored the documented machine-mode contract for invalid benchmark input by emitting a JSON failure envelope with `error.code = "input_validation_failed"` instead of leaving `stdout` empty.
+- Validated the final change set with `ruff check .`, `ruff format --check` on all story-touched Python files, focused benchmark/CLI regression coverage, and the full repository test suite (`320 passed`).
 
 ### File List
 
@@ -363,3 +366,4 @@ Codex GPT-5
 - `2026-03-15`: Created comprehensive ready-for-dev story context for benchmark execution against indexed repositories.
 - `2026-03-15`: Implemented Story 4.2 with benchmark lifecycle persistence, raw benchmark artifacts, `eval benchmark` CLI execution, benchmark provenance wiring, doc updates, and mirrored automated coverage; status set to `review`.
 - `2026-03-15`: Addressed code review follow-ups by pinning benchmark execution to preflight-resolved build ids, finalizing interrupted runs truthfully, expanding semantic/hybrid benchmark coverage, revalidating the full suite, and closing the story as `done`.
+- `2026-03-15`: Addressed final review follow-ups by eliminating the post-create interrupt race, restoring JSON validation failure envelopes for `eval benchmark`, revalidating Story 4.2, and keeping the story closed as `done`.

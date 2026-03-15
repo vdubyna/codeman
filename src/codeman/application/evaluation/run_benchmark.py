@@ -226,11 +226,11 @@ class RunBenchmarkUseCase:
             status=BenchmarkRunStatus.RUNNING,
             started_at=started_at,
         )
-        self.benchmark_run_store.create_run(running_record)
-
         executed_cases: list[BenchmarkCaseExecutionArtifact] = []
-        try:
-            with _trap_execution_interrupts():
+        with _trap_execution_interrupts():
+            try:
+                self.benchmark_run_store.create_run(running_record)
+
                 total_cases = len(dataset_result.dataset.cases)
                 for index, case in enumerate(dataset_result.dataset.cases, start=1):
                     self._report(
@@ -288,59 +288,59 @@ class RunBenchmarkUseCase:
                     context=context,
                     dataset_summary=dataset_result.summary,
                 )
-        except BenchmarkRunError as error:
-            self._finalize_failed_run(
-                record=running_record,
-                context=context,
-                dataset_result=dataset_result,
-                max_results=request.max_results,
-                cases=executed_cases,
-                error=error,
-            )
-            raise error from None
-        except KeyboardInterrupt as exc:
-            error = BenchmarkRunInterruptedError(details={"reason": type(exc).__name__})
-            self._finalize_failed_run(
-                record=running_record,
-                context=context,
-                dataset_result=dataset_result,
-                max_results=request.max_results,
-                cases=executed_cases,
-                error=error,
-            )
-            raise error from None
-        except SystemExit as exc:
-            if exc.code in (None, 0):
-                raise
-            error = BenchmarkRunInterruptedError(
-                details={
-                    "reason": type(exc).__name__,
-                    "exit_code": exc.code,
-                }
-            )
-            self._finalize_failed_run(
-                record=running_record,
-                context=context,
-                dataset_result=dataset_result,
-                max_results=request.max_results,
-                cases=executed_cases,
-                error=error,
-            )
-            raise error from None
-        except Exception as exc:
-            error = BenchmarkRunError(
-                "Benchmark execution failed unexpectedly.",
-                details={"reason": str(exc)},
-            )
-            self._finalize_failed_run(
-                record=running_record,
-                context=context,
-                dataset_result=dataset_result,
-                max_results=request.max_results,
-                cases=executed_cases,
-                error=error,
-            )
-            raise error from exc
+            except BenchmarkRunError as error:
+                self._finalize_failed_run_if_started(
+                    record=running_record,
+                    context=context,
+                    dataset_result=dataset_result,
+                    max_results=request.max_results,
+                    cases=executed_cases,
+                    error=error,
+                )
+                raise error from None
+            except KeyboardInterrupt as exc:
+                error = BenchmarkRunInterruptedError(details={"reason": type(exc).__name__})
+                self._finalize_failed_run_if_started(
+                    record=running_record,
+                    context=context,
+                    dataset_result=dataset_result,
+                    max_results=request.max_results,
+                    cases=executed_cases,
+                    error=error,
+                )
+                raise error from None
+            except SystemExit as exc:
+                if exc.code in (None, 0):
+                    raise
+                error = BenchmarkRunInterruptedError(
+                    details={
+                        "reason": type(exc).__name__,
+                        "exit_code": exc.code,
+                    }
+                )
+                self._finalize_failed_run_if_started(
+                    record=running_record,
+                    context=context,
+                    dataset_result=dataset_result,
+                    max_results=request.max_results,
+                    cases=executed_cases,
+                    error=error,
+                )
+                raise error from None
+            except Exception as exc:
+                error = BenchmarkRunError(
+                    "Benchmark execution failed unexpectedly.",
+                    details={"reason": str(exc)},
+                )
+                self._finalize_failed_run_if_started(
+                    record=running_record,
+                    context=context,
+                    dataset_result=dataset_result,
+                    max_results=request.max_results,
+                    cases=executed_cases,
+                    error=error,
+                )
+                raise error from exc
 
     def _initialize_runtime(self) -> None:
         provision_runtime_paths(self.runtime_paths)
@@ -755,6 +755,27 @@ class RunBenchmarkUseCase:
         except Exception:
             self.benchmark_run_store.update_run(failed_record)
             return failed_record
+
+    def _finalize_failed_run_if_started(
+        self,
+        *,
+        record: BenchmarkRunRecord,
+        context: ResolvedBenchmarkExecutionContext,
+        dataset_result: Any,
+        max_results: int,
+        cases: list[BenchmarkCaseExecutionArtifact],
+        error: BenchmarkRunError,
+    ) -> BenchmarkRunRecord | None:
+        if self.benchmark_run_store.get_by_run_id(record.run_id) is None:
+            return None
+        return self._finalize_failed_run(
+            record=record,
+            context=context,
+            dataset_result=dataset_result,
+            max_results=max_results,
+            cases=cases,
+            error=error,
+        )
 
     def _record_provenance(
         self,

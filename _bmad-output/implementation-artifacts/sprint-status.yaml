@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-03-13 23:42:21 +0200"
-last_updated: "2026-03-15 13:13:00 +0200"
+last_updated: "2026-03-15 13:35:30 +0200"
 project: codeman
 project_key: NOKEY
 tracking_system: file-system

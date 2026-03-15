@@ -67,6 +67,7 @@ class ErrorCode:
     COMPARE_RETRIEVAL_MODE_UNAVAILABLE = "compare_retrieval_mode_unavailable"
     COMPARE_RETRIEVAL_MODE_SNAPSHOT_MISMATCH = "compare_retrieval_mode_snapshot_mismatch"
     COMPARE_RETRIEVAL_MODES_FAILED = "compare_retrieval_modes_failed"
+    INPUT_VALIDATION_FAILED = "input_validation_failed"
     REINDEX_FAILED = "reindex_failed"
     CONFIGURATION_INVALID = "configuration_invalid"
     CONFIGURATION_PROFILE_NOT_FOUND = "configuration_profile_not_found"
