@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-03-13 23:42:21 +0200"
-last_updated: "2026-03-15 11:48:39 +0200"
+last_updated: "2026-03-15 12:22:21 +0200"
 project: codeman
 project_key: NOKEY
 tracking_system: file-system
@@ -70,8 +70,8 @@ development_status:
   3-6-key-caches-to-configuration-and-content-identity: done
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-1-define-the-golden-query-benchmark-dataset: backlog
+  epic-4: in-progress
+  4-1-define-the-golden-query-benchmark-dataset: done
   4-2-execute-a-benchmark-run-against-an-indexed-repository: backlog
   4-3-calculate-and-store-retrieval-quality-metrics: backlog
   4-4-generate-benchmark-reports-for-review: backlog

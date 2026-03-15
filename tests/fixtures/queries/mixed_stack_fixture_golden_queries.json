@@ -1,0 +1,81 @@
+{
+  "schema_version": "1",
+  "dataset_id": "mixed-stack-fixture-golden-queries",
+  "dataset_version": "2026-03-15",
+  "description": "Human-authored golden queries for the mixed-stack repository fixture.",
+  "notes": "This seed dataset defines benchmark truth only. Benchmark execution and reporting arrive in Story 4.2 and later.",
+  "cases": [
+    {
+      "query_id": "php-home-controller",
+      "query_text": "Which PHP controller returns the home response?",
+      "source_kind": "human_authored",
+      "tags": [
+        "php",
+        "controller"
+      ],
+      "judgments": [
+        {
+          "relative_path": "src/Controller/HomeController.php",
+          "language": "php",
+          "start_line": 5,
+          "end_line": 10,
+          "relevance_grade": 3
+        }
+      ]
+    },
+    {
+      "query_id": "javascript-boot-function",
+      "query_text": "Where is the JavaScript boot function defined for the fixture app?",
+      "source_kind": "human_authored",
+      "tags": [
+        "javascript",
+        "boot"
+      ],
+      "judgments": [
+        {
+          "relative_path": "assets/app.js",
+          "language": "javascript",
+          "start_line": 1,
+          "end_line": 3,
+          "relevance_grade": 3
+        }
+      ]
+    },
+    {
+      "query_id": "twig-body-block",
+      "query_text": "Which Twig template defines the body block for the fixture page?",
+      "source_kind": "human_authored",
+      "tags": [
+        "twig",
+        "template"
+      ],
+      "judgments": [
+        {
+          "relative_path": "templates/page.html.twig",
+          "language": "twig",
+          "start_line": 3,
+          "end_line": 5,
+          "relevance_grade": 3
+        }
+      ]
+    },
+    {
+      "query_id": "html-main-fixture",
+      "query_text": "Where is the HTML main content for the Codeman fixture page?",
+      "source_kind": "human_authored",
+      "tags": [
+        "html",
+        "page"
+      ],
+      "judgments": [
+        {
+          "relative_path": "public/index.html",
+          "language": "html",
+          "start_line": 1,
+          "end_line": 5,
+          "relevance_grade": 2
+        }
+      ]
+    }
+  ]
+}

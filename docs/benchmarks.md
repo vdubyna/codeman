@@ -9,8 +9,22 @@ This document owns human-facing benchmark and evaluation policy for `codeman`.
 ## Current Status
 
 - The current implementation provides retrieval and indexing foundations plus reserved `eval` and `compare` CLI groups.
+- The current implementation now includes strict benchmark dataset contracts plus a JSON-only dataset loader for authored golden-query inputs.
 - Full benchmark orchestration, provider-backed judge runs, and model-comparison workflows are planned but not fully implemented in the current codebase.
+- Benchmark execution, metrics, reports, comparisons, and regressions are still future work that starts in Story 4.2.
 - Documentation in this file should stay honest about what exists now versus what is still planned.
+
+## Implemented Benchmark Dataset Schema
+
+- Authored benchmark datasets are JSON documents loaded from explicit filesystem paths outside `.codeman/`.
+- Each dataset currently requires `schema_version`, `dataset_id`, `dataset_version`, and a non-empty `cases` list.
+- Each case currently requires `query_id`, `query_text`, `source_kind`, and at least one relevance judgment.
+- `source_kind` is intentionally narrow for now: `human_authored` and `synthetic_reviewed`.
+- Relevance judgments use one canonical shape: `relative_path`, optional `language`, optional 1-based `start_line` and `end_line`, plus integer `relevance_grade`.
+- Benchmark truth must anchor to normalized repository-relative POSIX paths. Snapshot-scoped identifiers such as chunk ids or snapshot ids are not benchmark truth.
+- The current schema validates duplicate `query_id` values, blank query text, empty judgments, invalid path anchors, invalid line spans, and invalid relevance grades before any future benchmark execution begins.
+- The loader derives deterministic summary metadata including case counts, judgment counts, and a canonical dataset fingerprint. That fingerprint is additive metadata, not a substitute for the human-managed `dataset_version`.
+- The seeded fixture lives at `tests/fixtures/queries/mixed_stack_fixture_golden_queries.json` and remains intentionally small and human-authored.
 
 ## Benchmark Baseline Policy
 
