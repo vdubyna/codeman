@@ -219,6 +219,19 @@ BenchmarkRetrievalBuildContext = (
     LexicalRetrievalBuildContext | SemanticRetrievalBuildContext | HybridRetrievalBuildContext
 )
 BenchmarkCaseRetrievalResult = RunLexicalQueryResult | RunSemanticQueryResult | RunHybridQueryResult
+BenchmarkComparisonMetricKey = Literal[
+    "recall_at_k",
+    "mrr",
+    "ndcg_at_k",
+    "query_latency_mean_ms",
+    "query_latency_p95_ms",
+    "lexical_index_duration_ms",
+    "semantic_index_duration_ms",
+    "derived_index_duration_ms",
+]
+BenchmarkMetricComparisonDirection = Literal["higher_is_better", "lower_is_better"]
+BenchmarkMetricComparisonOutcome = Literal["winner", "tie", "unavailable"]
+BenchmarkComparabilityValue = str | int | float | None
 
 
 class RunBenchmarkRequest(BaseModel):
@@ -417,6 +430,111 @@ class GenerateBenchmarkReportResult(BaseModel):
     report_artifact_path: Path
 
 
+class CompareBenchmarkRunsRequest(BaseModel):
+    """Input DTO for comparing two or more persisted benchmark runs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_ids: list[str] = Field(min_length=2)
+
+    @field_validator("run_ids", mode="before")
+    @classmethod
+    def _normalize_run_ids(cls, value: list[str] | tuple[str, ...] | None) -> list[str]:
+        if value in (None, ""):
+            return []
+        return [
+            _normalize_required_text(run_id, field_name="run_id")
+            for run_id in list(value)
+        ]
+
+    @field_validator("run_ids")
+    @classmethod
+    def _ensure_unique_run_ids(cls, value: list[str]) -> list[str]:
+        duplicates: list[str] = []
+        seen: set[str] = set()
+        for run_id in value:
+            if run_id in seen and run_id not in duplicates:
+                duplicates.append(run_id)
+            seen.add(run_id)
+        if duplicates:
+            duplicate_list = ", ".join(duplicates)
+            raise ValueError(
+                f"Benchmark comparison run ids must be unique. Duplicates: {duplicate_list}"
+            )
+        return value
+
+
+class BenchmarkRunComparisonEntry(BaseModel):
+    """One fully validated benchmark-run package included in a comparison."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run: BenchmarkRunRecord
+    repository: RetrievalRepositoryContext
+    snapshot: RetrievalSnapshotContext
+    build: BenchmarkRetrievalBuildContext
+    dataset: BenchmarkDatasetSummary
+    metrics: BenchmarkMetricsSummary
+    provenance: RunConfigurationProvenanceRecord
+
+
+class BenchmarkRunComparabilityDifference(BaseModel):
+    """One explicit contextual difference surfaced during comparison."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    note: str
+    values_by_run_id: dict[str, BenchmarkComparabilityValue] = Field(default_factory=dict)
+
+
+class BenchmarkRunComparability(BaseModel):
+    """Comparison-level truthfulness notes about contextual alignment."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_apples_to_apples: bool = True
+    differences: list[BenchmarkRunComparabilityDifference] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class BenchmarkMetricComparisonValue(BaseModel):
+    """One compared metric value associated with a benchmark run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    retrieval_mode: RetrievalMode
+    value: float | int | None = None
+
+
+class BenchmarkMetricComparison(BaseModel):
+    """Per-metric winner or tie summary across compared benchmark runs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metric_key: BenchmarkComparisonMetricKey
+    label: str
+    direction: BenchmarkMetricComparisonDirection
+    outcome: BenchmarkMetricComparisonOutcome
+    best_value: float | int | None = None
+    winner_run_ids: list[str] = Field(default_factory=list)
+    unavailable_run_ids: list[str] = Field(default_factory=list)
+    values: list[BenchmarkMetricComparisonValue] = Field(default_factory=list)
+
+
+class CompareBenchmarkRunsResult(BaseModel):
+    """Structured benchmark-run comparison assembled from persisted evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository: RetrievalRepositoryContext
+    entries: list[BenchmarkRunComparisonEntry] = Field(default_factory=list)
+    metric_comparisons: list[BenchmarkMetricComparison] = Field(default_factory=list)
+    comparability: BenchmarkRunComparability
+
+
 class RunBenchmarkResult(BaseModel):
     """Output DTO for successful or failed benchmark execution attempts."""
 
@@ -511,9 +629,15 @@ __all__ = [
     "BenchmarkCaseExecutionArtifact",
     "BenchmarkCaseMetricResult",
     "BenchmarkCaseRetrievalResult",
+    "BenchmarkComparabilityValue",
+    "BenchmarkComparisonMetricKey",
     "BenchmarkDatasetDocument",
     "BenchmarkDatasetSummary",
     "BenchmarkIndexingDurationSummary",
+    "BenchmarkMetricComparison",
+    "BenchmarkMetricComparisonDirection",
+    "BenchmarkMetricComparisonOutcome",
+    "BenchmarkMetricComparisonValue",
     "BenchmarkJudgmentMetricResult",
     "BenchmarkMetricsArtifactDocument",
     "BenchmarkMetricsSummary",
@@ -523,12 +647,17 @@ __all__ = [
     "BenchmarkQueryLatencySummary",
     "BenchmarkRelevanceJudgment",
     "BenchmarkRetrievalBuildContext",
+    "BenchmarkRunComparability",
+    "BenchmarkRunComparabilityDifference",
     "BenchmarkRunArtifactDocument",
+    "BenchmarkRunComparisonEntry",
     "BenchmarkRunFailure",
     "BenchmarkRunRecord",
     "BenchmarkRunStatus",
     "CalculateBenchmarkMetricsRequest",
     "CalculateBenchmarkMetricsResult",
+    "CompareBenchmarkRunsRequest",
+    "CompareBenchmarkRunsResult",
     "GenerateBenchmarkReportRequest",
     "GenerateBenchmarkReportResult",
     "LoadBenchmarkDatasetRequest",

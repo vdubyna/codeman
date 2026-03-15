@@ -687,6 +687,116 @@ component retriever was truncated before fusion.
 ## Compare Commands
 
 ```bash
+uv run codeman compare benchmark-runs --run-id <run-id> --run-id <run-id>
+uv run codeman compare benchmark-runs --run-id <run-id> --run-id <run-id> --output-format json
+```
+
+`compare benchmark-runs` compares two or more completed benchmark runs from persisted evidence only.
+The command preserves the requested `--run-id` order, then loads each benchmark row, `run.json`,
+`metrics.json`, and stored configuration provenance by run id. It does not rerun retrieval,
+recalculate metrics, parse `report.md`, or compare loose summary rows when persisted evidence
+disagrees.
+
+The command requires at least two distinct `--run-id` options. It fails with stable
+comparison-specific errors when a requested run is unknown, incomplete, missing `run.json`,
+missing `metrics.json`, has corrupt or mismatched persisted evidence, has unavailable provenance,
+or belongs to a different repository than the other compared runs.
+The workflow is read-only: it does not create a separate comparison provenance row.
+
+Text output includes:
+- repository identity plus the requested compared run ids
+- one compact summary per compared run with retrieval mode, snapshot id, dataset id/version,
+  evaluated cutoff `k`, and configuration/provider/model identity
+- per-metric winners or ties for `Recall@K`, `MRR`, `NDCG@K`, latency summaries, and recorded
+  indexing-duration summaries
+- explicit comparability notes and detailed differing context values when snapshot, dataset,
+  evaluated cutoff, case count, or recorded configuration context differs
+
+JSON output keeps the standard success envelope on `stdout` and exposes:
+- `data.repository`
+- `data.entries`
+- `data.metric_comparisons`
+- `data.comparability`
+
+When `data.comparability.is_apples_to_apples` is `false`, the command still reports truthful
+per-metric winners, but it also exposes explicit contextual differences instead of implying a clean
+apples-to-apples comparison.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "repository": {
+      "repository_id": "repo-123",
+      "repository_name": "registered-repo"
+    },
+    "entries": [
+      {
+        "run": {
+          "run_id": "run-001",
+          "retrieval_mode": "lexical"
+        },
+        "dataset": {
+          "dataset_id": "fixture-benchmark",
+          "dataset_version": "2026-03-15",
+          "dataset_fingerprint": "dataset-fingerprint-123"
+        },
+        "provenance": {
+          "configuration_id": "cfg-run-001"
+        }
+      },
+      {
+        "run": {
+          "run_id": "run-002",
+          "retrieval_mode": "semantic"
+        },
+        "dataset": {
+          "dataset_id": "fixture-benchmark",
+          "dataset_version": "2026-03-16",
+          "dataset_fingerprint": "dataset-fingerprint-456"
+        },
+        "provenance": {
+          "configuration_id": "cfg-run-002"
+        }
+      }
+    ],
+    "metric_comparisons": [
+      {
+        "metric_key": "recall_at_k",
+        "label": "Recall@K",
+        "direction": "higher_is_better",
+        "outcome": "winner",
+        "best_value": 0.8,
+        "winner_run_ids": ["run-002"]
+      }
+    ],
+    "comparability": {
+      "is_apples_to_apples": false,
+      "notes": [
+        "Benchmark context differs across compared runs; metric winners are informative but not apples-to-apples.",
+        "Compared runs used different benchmark dataset versions."
+      ],
+      "differences": [
+        {
+          "key": "dataset_version",
+          "label": "Dataset Version",
+          "note": "Compared runs used different benchmark dataset versions.",
+          "values_by_run_id": {
+            "run-001": "2026-03-15",
+            "run-002": "2026-03-16"
+          }
+        }
+      ]
+    }
+  },
+  "meta": {
+    "command": "compare.benchmark_runs",
+    "output_format": "json"
+  }
+}
+```
+
+```bash
 uv run codeman compare query-modes <repository-id> "controller home route"
 uv run codeman compare query-modes <repository-id> "controller home route" --output-format json
 uv run codeman compare query-modes <repository-id> --query="--query" --output-format json

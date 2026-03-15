@@ -21,6 +21,7 @@ from codeman.application.config.show_retrieval_strategy_profile import (
 from codeman.application.evaluation.calculate_benchmark_metrics import (
     CalculateBenchmarkMetricsUseCase,
 )
+from codeman.application.evaluation.compare_runs import CompareBenchmarkRunsUseCase
 from codeman.application.evaluation.generate_report import GenerateBenchmarkReportUseCase
 from codeman.application.evaluation.load_benchmark_dataset import LoadBenchmarkDatasetUseCase
 from codeman.application.evaluation.run_benchmark import RunBenchmarkUseCase
@@ -133,6 +134,7 @@ class BootstrapContainer:
     run_semantic_query: RunSemanticQueryUseCase
     run_hybrid_query: RunHybridQueryUseCase
     compare_retrieval_modes: CompareRetrievalModesUseCase
+    compare_benchmark_runs: CompareBenchmarkRunsUseCase
     load_benchmark_dataset: LoadBenchmarkDatasetUseCase
     calculate_benchmark_metrics: CalculateBenchmarkMetricsUseCase
     generate_benchmark_report: GenerateBenchmarkReportUseCase
@@ -365,6 +367,12 @@ def bootstrap(
         record_run_provenance=record_run_provenance,
         formatter=RetrievalResultFormatter(),
     )
+    compare_benchmark_runs = CompareBenchmarkRunsUseCase(
+        runtime_paths=runtime_paths,
+        benchmark_run_store=benchmark_run_store,
+        artifact_store=artifact_store,
+        show_run_provenance=show_run_provenance,
+    )
     load_benchmark_dataset = LoadBenchmarkDatasetUseCase()
     calculate_benchmark_metrics = CalculateBenchmarkMetricsUseCase(
         runtime_paths=runtime_paths,
@@ -448,6 +456,7 @@ def bootstrap(
         run_semantic_query=run_semantic_query,
         run_hybrid_query=run_hybrid_query,
         compare_retrieval_modes=compare_retrieval_modes,
+        compare_benchmark_runs=compare_benchmark_runs,
         load_benchmark_dataset=load_benchmark_dataset,
         calculate_benchmark_metrics=calculate_benchmark_metrics,
         generate_benchmark_report=generate_benchmark_report,

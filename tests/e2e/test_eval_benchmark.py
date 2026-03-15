@@ -330,3 +330,124 @@ def test_uv_run_eval_report_supports_text_and_json_output(tmp_path: Path) -> Non
     assert "# Benchmark Report:" in report_artifact_path.read_text(encoding="utf-8")
     assert "Loading benchmark evidence for run:" in text_result.stderr
     assert "Writing benchmark report artifact for run:" in json_result.stderr
+
+
+def test_uv_run_compare_benchmark_runs_marks_context_mismatches_explicitly(
+    tmp_path: Path,
+) -> None:
+    project_root, env, repository_id = prepare_benchmark_repository(
+        tmp_path=tmp_path,
+        scenario_name="compare-benchmark-runs",
+        build_semantic=True,
+    )
+    alternate_dataset = tmp_path / "mixed_stack_fixture_golden_queries_v2.json"
+    dataset_payload = json.loads(FIXTURE_DATASET.read_text(encoding="utf-8"))
+    dataset_payload["dataset_version"] = "2026-03-16"
+    alternate_dataset.write_text(json.dumps(dataset_payload, indent=2), encoding="utf-8")
+
+    first_benchmark = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "eval",
+            "benchmark",
+            repository_id,
+            str(FIXTURE_DATASET),
+            "--retrieval-mode",
+            "lexical",
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+    second_benchmark = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "eval",
+            "benchmark",
+            repository_id,
+            str(alternate_dataset),
+            "--retrieval-mode",
+            "semantic",
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+
+    first_payload = json.loads(first_benchmark.stdout)
+    second_payload = json.loads(second_benchmark.stdout)
+    first_run_id = first_payload["data"]["run"]["run_id"]
+    second_run_id = second_payload["data"]["run"]["run_id"]
+
+    text_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "compare",
+            "benchmark-runs",
+            "--run-id",
+            first_run_id,
+            "--run-id",
+            second_run_id,
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+    json_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "codeman",
+            "compare",
+            "benchmark-runs",
+            "--run-id",
+            first_run_id,
+            "--run-id",
+            second_run_id,
+            "--output-format",
+            "json",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=project_root,
+        env=env,
+    )
+
+    payload = json.loads(json_result.stdout)
+    difference_keys = {
+        difference["key"] for difference in payload["data"]["comparability"]["differences"]
+    }
+
+    assert first_benchmark.returncode == 0, first_benchmark.stderr
+    assert second_benchmark.returncode == 0, second_benchmark.stderr
+    assert text_result.returncode == 0, text_result.stderr
+    assert json_result.returncode == 0, json_result.stderr
+    assert "Benchmark run comparison completed." in text_result.stdout
+    assert "Apples-to-Apples: no" in text_result.stdout
+    assert "Compared runs used different benchmark dataset versions." in text_result.stdout
+    assert "Dataset Version:" in text_result.stdout
+    assert payload["ok"] is True
+    assert payload["data"]["entries"][0]["run"]["run_id"] == first_run_id
+    assert payload["data"]["entries"][1]["run"]["run_id"] == second_run_id
+    assert payload["data"]["comparability"]["is_apples_to_apples"] is False
+    assert "dataset_version" in difference_keys
+    assert payload["meta"]["command"] == "compare.benchmark_runs"
+    assert "Running benchmark comparison for runs:" in text_result.stderr
+    assert "Loading benchmark comparison evidence for run:" in text_result.stderr

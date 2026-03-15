@@ -14,7 +14,8 @@ This document owns human-facing benchmark and evaluation policy for `codeman`.
 - Benchmark execution persists a compact SQLite run row plus a raw artifact under `.codeman/artifacts/benchmarks/<run-id>/run.json`, reuses one shared run id for configuration provenance, and now stores additive metric outputs under `.codeman/artifacts/benchmarks/<run-id>/metrics.json`.
 - The current implementation now calculates and stores benchmark metrics automatically for successful benchmark runs, including `Recall@K`, `MRR`, `NDCG@K`, query latency summaries, and truthful indexing-duration summaries where available.
 - The current implementation now includes `eval report`, which renders a deterministic Markdown review artifact under `.codeman/artifacts/benchmarks/<run-id>/report.md` from the persisted run row, raw artifact, metrics artifact, and run provenance.
-- Run comparison, regressions, provider-backed judge workflows, and model-comparison workflows remain future work for Stories 4.5-4.6 and beyond.
+- The current implementation now includes `compare benchmark-runs`, which compares persisted benchmark runs side by side, reports per-metric winners or ties, and surfaces explicit comparability notes when context differs.
+- Regression detection, provider-backed judge workflows, and model-comparison workflows remain future work for Story 4.6 and beyond.
 - Documentation in this file should stay honest about what exists now versus what is still planned.
 
 ## Implemented Benchmark Dataset Schema
@@ -55,6 +56,17 @@ This document owns human-facing benchmark and evaluation policy for `codeman`.
 - `eval report <run-id>` now renders a concise review artifact from that persisted evidence. The
   report includes benchmark identity, build/config provenance, aggregate metrics, and a compact
   per-case appendix without duplicating the entire raw benchmark payload.
+- `compare benchmark-runs --run-id ...` now compares only persisted benchmark evidence:
+  - the benchmark lifecycle row
+  - `run.json`
+  - `metrics.json`
+  - stored configuration provenance
+- Benchmark comparison preserves the requested run order, fails explicitly on cross-repository or
+  incomplete/corrupt evidence, and marks contextual mismatches instead of implying a clean
+  apples-to-apples comparison when snapshot, dataset, evaluated cutoff, or case count differ.
+- The comparison command is read-only: it does not create a separate comparison provenance row,
+  because the compared benchmark runs already carry the truthful configuration provenance that the
+  side-by-side output surfaces directly.
 
 ## Required Evaluation Metadata
 

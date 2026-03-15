@@ -96,4 +96,18 @@ class ErrorCode:
     BENCHMARK_REPORT_ARTIFACT_CORRUPT = "benchmark_report_artifact_corrupt"
     BENCHMARK_REPORT_INCOMPLETE = "benchmark_report_incomplete"
     BENCHMARK_REPORT_PROVENANCE_UNAVAILABLE = "benchmark_report_provenance_unavailable"
+    COMPARE_BENCHMARK_RUNS_FAILED = "compare_benchmark_runs_failed"
+    COMPARE_BENCHMARK_RUN_NOT_FOUND = "compare_benchmark_run_not_found"
+    COMPARE_BENCHMARK_RUN_ARTIFACT_MISSING = "compare_benchmark_run_artifact_missing"
+    COMPARE_BENCHMARK_RUN_METRICS_ARTIFACT_MISSING = (
+        "compare_benchmark_run_metrics_artifact_missing"
+    )
+    COMPARE_BENCHMARK_RUN_INCOMPLETE = "compare_benchmark_run_incomplete"
+    COMPARE_BENCHMARK_RUN_ARTIFACT_CORRUPT = "compare_benchmark_run_artifact_corrupt"
+    COMPARE_BENCHMARK_RUN_PROVENANCE_UNAVAILABLE = (
+        "compare_benchmark_run_provenance_unavailable"
+    )
+    COMPARE_BENCHMARK_RUN_REPOSITORY_MISMATCH = (
+        "compare_benchmark_run_repository_mismatch"
+    )
     INTERNAL_ERROR = "internal_error"
