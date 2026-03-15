@@ -23,11 +23,18 @@ from codeman.application.ports.source_inventory_port import (
     SourceInventoryStorePort,
     SourceScannerPort,
 )
+from codeman.application.provenance.record_run_provenance import (
+    RecordRunConfigurationProvenanceUseCase,
+)
 from codeman.application.repo.create_snapshot import (
     CreateSnapshotRequest,
     CreateSnapshotUseCase,
 )
 from codeman.config.indexing import IndexingConfig, build_indexing_fingerprint
+from codeman.contracts.configuration import (
+    RecordRunConfigurationProvenanceRequest,
+    RunProvenanceWorkflowContext,
+)
 from codeman.contracts.errors import ErrorCode
 from codeman.contracts.reindexing import (
     ChangeReason,
@@ -196,6 +203,7 @@ class ReindexRepositoryUseCase:
     chunker_registry: ChunkerRegistryPort
     artifact_store: ArtifactStorePort
     indexing_config: IndexingConfig
+    record_run_provenance: RecordRunConfigurationProvenanceUseCase | None = None
 
     def execute(self, request: ReindexRepositoryRequest) -> ReindexRepositoryResult:
         """Re-index a repository by reusing baseline artifacts whenever safe."""
@@ -285,6 +293,21 @@ class ReindexRepositoryUseCase:
                 source_files_reused=len(preview_diff.unchanged),
                 chunks_reused=len(baseline_chunks),
             )
+            if self.record_run_provenance is not None:
+                self.record_run_provenance.execute(
+                    RecordRunConfigurationProvenanceRequest(
+                        run_id=run_record.run_id,
+                        workflow_type="index.reindex",
+                        repository_id=repository.repository_id,
+                        snapshot_id=baseline_snapshot.snapshot_id,
+                        indexing_config_fingerprint=current_config_fingerprint,
+                        workflow_context=RunProvenanceWorkflowContext(
+                            previous_snapshot_id=baseline_snapshot.snapshot_id,
+                            result_snapshot_id=baseline_snapshot.snapshot_id,
+                            noop=True,
+                        ),
+                    )
+                )
             return ReindexRepositoryResult(
                 run_id=run_record.run_id,
                 repository=repository,
@@ -448,14 +471,27 @@ class ReindexRepositoryUseCase:
             source_files_rebuilt=rebuilt_files,
             source_files_removed=len(diff.removed),
             source_files_newly_unsupported=len(diff.newly_unsupported),
-            source_files_invalidated_by_config=len(current_source_files)
-            if config_changed
-            else 0,
+            source_files_invalidated_by_config=len(current_source_files) if config_changed else 0,
             chunks_reused=reused_chunk_count,
             chunks_rebuilt=len(built_chunks),
             chunks_removed=chunks_removed,
             chunks_invalidated_by_config=chunks_invalidated_by_config,
         )
+        if self.record_run_provenance is not None:
+            self.record_run_provenance.execute(
+                RecordRunConfigurationProvenanceRequest(
+                    run_id=run_record.run_id,
+                    workflow_type="index.reindex",
+                    repository_id=repository.repository_id,
+                    snapshot_id=current_snapshot.snapshot_id,
+                    indexing_config_fingerprint=current_config_fingerprint,
+                    workflow_context=RunProvenanceWorkflowContext(
+                        previous_snapshot_id=baseline_snapshot.snapshot_id,
+                        result_snapshot_id=current_snapshot.snapshot_id,
+                        noop=False,
+                    ),
+                )
+            )
         return ReindexRepositoryResult(
             run_id=run_record.run_id,
             repository=repository,

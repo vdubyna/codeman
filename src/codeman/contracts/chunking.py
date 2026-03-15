@@ -97,6 +97,7 @@ class BuildChunksResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    run_id: str | None = None
     repository: RepositoryRecord
     snapshot: SnapshotRecord
     chunks: list[ChunkRecord]

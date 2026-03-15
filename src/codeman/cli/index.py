@@ -238,6 +238,7 @@ def build_chunks(
     ]
     lines = [
         f"Generated retrieval chunks: {result.diagnostics.total_chunks} chunks",
+        f"Run ID: {result.run_id}",
         f"Snapshot ID: {result.snapshot.snapshot_id}",
         f"Repository ID: {result.repository.repository_id}",
         f"Chunks by language: {chunks_by_language}",
@@ -285,6 +286,7 @@ def build_lexical(
         "\n".join(
             [
                 f"Built lexical index: {result.diagnostics.chunks_indexed} chunks",
+                f"Run ID: {result.run_id}",
                 f"Build ID: {result.build.build_id}",
                 f"Snapshot ID: {result.snapshot.snapshot_id}",
                 f"Repository ID: {result.repository.repository_id}",
@@ -333,6 +335,7 @@ def build_semantic(
     provider_mode = "external" if result.provider.is_external_provider else "local"
     lines = [
         f"Built semantic index: {result.diagnostics.document_count} documents",
+        f"Run ID: {result.run_id}",
         f"Build ID: {result.build.build_id}",
         f"Snapshot ID: {result.snapshot.snapshot_id}",
         f"Repository ID: {result.repository.repository_id}",

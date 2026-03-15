@@ -12,9 +12,16 @@ from codeman.application.ports.index_build_store_port import IndexBuildStorePort
 from codeman.application.ports.lexical_query_port import LexicalQueryPort
 from codeman.application.ports.metadata_store_port import RepositoryMetadataStorePort
 from codeman.application.ports.snapshot_port import SnapshotMetadataStorePort
+from codeman.application.provenance.record_run_provenance import (
+    RecordRunConfigurationProvenanceUseCase,
+)
 from codeman.application.query.format_results import (
     ResolvedLexicalMatch,
     RetrievalResultFormatter,
+)
+from codeman.contracts.configuration import (
+    RecordRunConfigurationProvenanceRequest,
+    RunProvenanceWorkflowContext,
 )
 from codeman.contracts.errors import ErrorCode
 from codeman.contracts.retrieval import (
@@ -101,6 +108,7 @@ class RunLexicalQueryUseCase:
     artifact_store: ArtifactStorePort
     lexical_query: LexicalQueryPort
     formatter: RetrievalResultFormatter
+    record_run_provenance: RecordRunConfigurationProvenanceUseCase | None = None
 
     def execute(self, request: RunLexicalQueryRequest) -> RunLexicalQueryResult:
         """Run a lexical query against the current repository build."""
@@ -150,7 +158,7 @@ class RunLexicalQueryUseCase:
             ) from exc
 
         resolved_matches = self._resolve_matches(query_result.matches)
-        return self.formatter.format_lexical_results(
+        result = self.formatter.format_lexical_results(
             repository=repository,
             snapshot=snapshot,
             build=build,
@@ -158,6 +166,22 @@ class RunLexicalQueryUseCase:
             diagnostics=query_result.diagnostics,
             matches=resolved_matches,
         )
+        if not request.record_provenance or self.record_run_provenance is None:
+            return result
+
+        provenance = self.record_run_provenance.execute(
+            RecordRunConfigurationProvenanceRequest(
+                workflow_type="query.lexical",
+                repository_id=repository.repository_id,
+                snapshot_id=snapshot.snapshot_id,
+                indexing_config_fingerprint=build.indexing_config_fingerprint,
+                workflow_context=RunProvenanceWorkflowContext(
+                    lexical_build_id=build.build_id,
+                    max_results=request.max_results,
+                ),
+            )
+        )
+        return result.model_copy(update={"run_id": provenance.run_id})
 
     def _resolve_matches(
         self,
@@ -169,9 +193,7 @@ class RunLexicalQueryUseCase:
         chunk_ids = [match.chunk_id for match in matches]
         chunks = self.chunk_store.get_by_chunk_ids(chunk_ids)
         chunks_by_id = {chunk.chunk_id: chunk for chunk in chunks}
-        missing_chunk_ids = [
-            chunk_id for chunk_id in chunk_ids if chunk_id not in chunks_by_id
-        ]
+        missing_chunk_ids = [chunk_id for chunk_id in chunk_ids if chunk_id not in chunks_by_id]
         if missing_chunk_ids:
             missing_list = ", ".join(missing_chunk_ids)
             raise LexicalQueryChunkMetadataMissingError(

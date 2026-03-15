@@ -22,6 +22,9 @@ from codeman.application.ports.snapshot_port import (
     SnapshotMetadataStorePort,
 )
 from codeman.application.ports.source_inventory_port import SourceInventoryStorePort
+from codeman.application.provenance.record_run_provenance import (
+    RecordRunConfigurationProvenanceUseCase,
+)
 from codeman.config.indexing import IndexingConfig, build_indexing_fingerprint
 from codeman.contracts.chunking import (
     BuildChunksRequest,
@@ -29,6 +32,10 @@ from codeman.contracts.chunking import (
     ChunkFileDiagnostic,
     ChunkGenerationDiagnostics,
     ChunkRecord,
+)
+from codeman.contracts.configuration import (
+    RecordRunConfigurationProvenanceRequest,
+    RunProvenanceWorkflowContext,
 )
 from codeman.contracts.errors import ErrorCode
 from codeman.runtime import RuntimePaths, provision_runtime_paths
@@ -99,6 +106,7 @@ class BuildChunksUseCase:
     chunker_registry: ChunkerRegistryPort
     artifact_store: ArtifactStorePort
     indexing_config: IndexingConfig
+    record_run_provenance: RecordRunConfigurationProvenanceUseCase | None = None
 
     def execute(self, request: BuildChunksRequest) -> BuildChunksResult:
         """Generate and persist chunk metadata and payloads for a snapshot."""
@@ -191,7 +199,20 @@ class BuildChunksUseCase:
                 "indexing_config_fingerprint": current_fingerprint,
             }
         )
+        provenance_run_id: str | None = None
+        if self.record_run_provenance is not None:
+            provenance = self.record_run_provenance.execute(
+                RecordRunConfigurationProvenanceRequest(
+                    workflow_type="index.build-chunks",
+                    repository_id=repository.repository_id,
+                    snapshot_id=snapshot.snapshot_id,
+                    indexing_config_fingerprint=current_fingerprint,
+                    workflow_context=RunProvenanceWorkflowContext(),
+                )
+            )
+            provenance_run_id = provenance.run_id
         return BuildChunksResult(
+            run_id=provenance_run_id,
             repository=repository,
             snapshot=snapshot,
             chunks=persisted_chunks,

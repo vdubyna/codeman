@@ -23,6 +23,8 @@ from codeman.contracts.configuration import (
     SaveRetrievalStrategyProfileRequest,
     SelectedRetrievalStrategyProfile,
     ShowRetrievalStrategyProfileRequest,
+    ShowRunConfigurationProvenanceRequest,
+    ShowRunConfigurationProvenanceResult,
 )
 
 app = typer.Typer(help="Configuration inspection and override commands.", no_args_is_help=True)
@@ -30,7 +32,12 @@ profile_app = typer.Typer(
     help="Save, list, and inspect reusable retrieval strategy profiles.",
     no_args_is_help=True,
 )
+provenance_app = typer.Typer(
+    help="Inspect persisted run configuration provenance records.",
+    no_args_is_help=True,
+)
 app.add_typer(profile_app, name="profile")
+app.add_typer(provenance_app, name="provenance")
 
 
 @app.callback()
@@ -41,6 +48,11 @@ def config_group() -> None:
 @profile_app.callback()
 def config_profile_group() -> None:
     """Manage reusable retrieval strategy profiles."""
+
+
+@provenance_app.callback()
+def config_provenance_group() -> None:
+    """Inspect persisted configuration provenance."""
 
 
 def _render_value(value: object | None) -> str:
@@ -93,10 +105,7 @@ def _profile_detail_lines(profile: RetrievalStrategyProfileRecord) -> list[str]:
         f"Model Version: {_render_value(profile.model_version)}",
         f"Vector Engine: {profile.vector_engine}",
         f"Vector Dimension: {profile.vector_dimension}",
-        (
-            "Indexing Fingerprint Salt: "
-            f"{_render_value(profile.payload.indexing.fingerprint_salt)}"
-        ),
+        (f"Indexing Fingerprint Salt: {_render_value(profile.payload.indexing.fingerprint_salt)}"),
         (
             "Semantic Fingerprint Salt: "
             f"{_render_value(profile.payload.semantic_indexing.fingerprint_salt)}"
@@ -167,6 +176,42 @@ def _handle_profile_error(
     )
 
 
+def _render_run_provenance_text(result: ShowRunConfigurationProvenanceResult) -> str:
+    provenance = result.provenance
+    effective_config = json.dumps(
+        provenance.effective_config.to_loader_payload(),
+        indent=2,
+        sort_keys=True,
+    )
+    workflow_context = json.dumps(
+        provenance.workflow_context.model_dump(
+            mode="json",
+            exclude_none=True,
+            exclude_defaults=True,
+        ),
+        indent=2,
+        sort_keys=True,
+    )
+    lines = [
+        f"Run ID: {provenance.run_id}",
+        f"Workflow: {provenance.workflow_type}",
+        f"Repository ID: {provenance.repository_id}",
+        f"Snapshot ID: {_render_value(provenance.snapshot_id)}",
+        f"Configuration ID: {provenance.configuration_id}",
+        (f"Indexing Config Fingerprint: {_render_value(provenance.indexing_config_fingerprint)}"),
+        (f"Semantic Config Fingerprint: {_render_value(provenance.semantic_config_fingerprint)}"),
+        f"Provider: {_render_value(provenance.provider_id)}",
+        f"Model ID: {_render_value(provenance.model_id)}",
+        f"Model Version: {_render_value(provenance.model_version)}",
+        f"Created At: {provenance.created_at.isoformat()}",
+        "Effective Configuration:",
+        effective_config,
+        "Workflow Context:",
+        workflow_context,
+    ]
+    return "\n".join(lines)
+
+
 @app.command("show")
 def show_config(
     ctx: typer.Context,
@@ -216,8 +261,7 @@ def show_config(
     selected_profile_line = "Selected profile: none"
     if selected_profile is not None:
         selected_profile_line = (
-            "Selected profile: "
-            f"{selected_profile['name']} ({selected_profile['profile_id']})"
+            f"Selected profile: {selected_profile['name']} ({selected_profile['profile_id']})"
         )
     lines = [
         "Configuration source precedence: " + " -> ".join(payload["metadata"]["precedence"]),
@@ -255,6 +299,43 @@ def show_config(
             ]
         )
     typer.echo("\n".join(lines))
+
+
+@provenance_app.command("show")
+def show_run_provenance(
+    ctx: typer.Context,
+    run_id: str,
+    output_format: OutputFormat = typer.Option(OutputFormat.TEXT, "--output-format"),
+) -> None:
+    """Show the stored effective configuration provenance for one successful run."""
+
+    from codeman.cli.app import get_container
+
+    container = get_container(ctx)
+    try:
+        request = ShowRunConfigurationProvenanceRequest(run_id=run_id)
+        result = container.show_run_provenance.execute(request)
+    except (ConfigurationResolutionError, ValidationError, ValueError) as error:
+        if isinstance(error, ValidationError):
+            validation_message = error.errors()[0]["msg"] if error.errors() else str(error)
+            error = ConfigurationResolutionError(validation_message.removeprefix("Value error, "))
+        elif not isinstance(error, ConfigurationResolutionError):
+            error = ConfigurationResolutionError(str(error))
+        _handle_profile_error(
+            error=error,
+            output_format=output_format,
+            command_name="config.provenance.show",
+        )
+
+    envelope = SuccessEnvelope(
+        data=result,
+        meta=build_command_meta("config.provenance.show", output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+        return
+
+    typer.echo(_render_run_provenance_text(result))
 
 
 @profile_app.command("save")

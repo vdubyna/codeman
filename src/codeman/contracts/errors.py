@@ -72,4 +72,5 @@ class ErrorCode:
     CONFIGURATION_PROFILE_NOT_FOUND = "configuration_profile_not_found"
     CONFIGURATION_PROFILE_NAME_CONFLICT = "configuration_profile_name_conflict"
     CONFIGURATION_PROFILE_AMBIGUOUS = "configuration_profile_ambiguous"
+    CONFIGURATION_PROVENANCE_NOT_FOUND = "configuration_provenance_not_found"
     INTERNAL_ERROR = "internal_error"

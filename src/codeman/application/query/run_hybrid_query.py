@@ -7,6 +7,9 @@ from hashlib import sha1
 from time import perf_counter
 from typing import Any
 
+from codeman.application.provenance.record_run_provenance import (
+    RecordRunConfigurationProvenanceUseCase,
+)
 from codeman.application.query.format_results import RetrievalResultFormatter
 from codeman.application.query.hybrid_fusion import (
     DEFAULT_HYBRID_RANK_CONSTANT,
@@ -24,6 +27,10 @@ from codeman.application.query.run_semantic_query import (
     SemanticBuildBaselineMissingError,
     SemanticQueryError,
     SemanticQueryRepositoryNotRegisteredError,
+)
+from codeman.contracts.configuration import (
+    RecordRunConfigurationProvenanceRequest,
+    RunProvenanceWorkflowContext,
 )
 from codeman.contracts.errors import ErrorCode
 from codeman.contracts.retrieval import (
@@ -112,6 +119,7 @@ class RunHybridQueryUseCase:
 
     run_lexical_query: RunLexicalQueryUseCase
     run_semantic_query: RunSemanticQueryUseCase
+    record_run_provenance: RecordRunConfigurationProvenanceUseCase | None = None
     formatter: RetrievalResultFormatter = field(default_factory=RetrievalResultFormatter)
     candidate_window_size: int = DEFAULT_HYBRID_CANDIDATE_WINDOW
     rank_constant: int = DEFAULT_HYBRID_RANK_CONSTANT
@@ -137,7 +145,29 @@ class RunHybridQueryUseCase:
             rank_constant=self.rank_constant,
             latency_ms=int((perf_counter() - started_at) * 1000),
         )
-        return composition.result
+        if self.record_run_provenance is None:
+            return composition.result
+
+        provenance = self.record_run_provenance.execute(
+            RecordRunConfigurationProvenanceRequest(
+                workflow_type="query.hybrid",
+                repository_id=composition.result.repository.repository_id,
+                snapshot_id=composition.result.snapshot.snapshot_id,
+                indexing_config_fingerprint=lexical_result.build.indexing_config_fingerprint,
+                semantic_config_fingerprint=semantic_result.build.semantic_config_fingerprint,
+                provider_id=semantic_result.build.provider_id,
+                model_id=semantic_result.build.model_id,
+                model_version=semantic_result.build.model_version,
+                workflow_context=RunProvenanceWorkflowContext(
+                    lexical_build_id=lexical_result.build.build_id,
+                    semantic_build_id=semantic_result.build.build_id,
+                    max_results=request.max_results,
+                    rank_constant=self.rank_constant,
+                    rank_window_size=candidate_window,
+                ),
+            )
+        )
+        return composition.result.model_copy(update={"run_id": provenance.run_id})
 
     def _run_lexical(
         self,
@@ -151,6 +181,7 @@ class RunHybridQueryUseCase:
                     repository_id=request.repository_id,
                     query_text=request.query_text,
                     max_results=candidate_window,
+                    record_provenance=False,
                 )
             )
         except LexicalQueryRepositoryNotRegisteredError as exc:
@@ -179,6 +210,7 @@ class RunHybridQueryUseCase:
                     repository_id=request.repository_id,
                     query_text=request.query_text,
                     max_results=candidate_window,
+                    record_provenance=False,
                 )
             )
         except SemanticQueryRepositoryNotRegisteredError as exc:

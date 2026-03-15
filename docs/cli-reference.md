@@ -109,6 +109,15 @@ JSON output keeps the standard success envelope on `stdout` and returns:
 - `provider`
 - `diagnostics`
 
+Successful indexing workflows now also expose a stable `run_id` in `data` for:
+- `index build-chunks`
+- `index build-lexical`
+- `index build-semantic`
+- `index reindex`
+
+Text mode prints the same `run_id` on `stdout` alongside the workflow summary. Progress/status
+lines remain on `stderr`, so machine-readable JSON `stdout` stays clean.
+
 ```bash
 uv run codeman index reindex <repository-id>
 uv run codeman index reindex <repository-id> --output-format json
@@ -283,6 +292,33 @@ Profile text and JSON output distinguish profiles by:
 Secrets such as provider `api_key` values are never written into saved profile payloads, never
 printed in `config profile` output, and never promoted into project defaults.
 
+Stored run configuration provenance is exposed under the nested `config provenance` command group:
+
+```bash
+uv run codeman config provenance show <run-id>
+uv run codeman config provenance show <run-id> --output-format json
+```
+
+Successful indexing and retrieval workflows persist a secret-safe provenance record keyed by
+`run_id`. The stored record includes:
+- `workflow_type`
+- `repository_id`
+- `snapshot_id` when the workflow has one
+- a stable `configuration_id` derived from canonical effective retrieval config JSON
+- workflow-specific fingerprints such as `indexing_config_fingerprint` and `semantic_config_fingerprint`
+- non-secret provider/model metadata when relevant
+- secret-safe `effective_config`
+- workflow-specific context such as component build ids or compared modes
+
+The provenance store intentionally omits:
+- raw provider secrets such as `api_key`
+- raw query text
+- runtime workspace path overrides
+- future eval/judge-only fields that are not implemented in the current codebase
+
+Missing run ids fail with `configuration_provenance_not_found`. Read-only provenance lookups do
+not create runtime metadata in an otherwise clean workspace.
+
 ```bash
 uv run codeman query semantic <repository-id> "controller home route"
 uv run codeman query semantic <repository-id> "controller home route" --output-format json
@@ -297,6 +333,7 @@ If the persisted vector artifact no longer matches its recorded metadata, the co
 `semantic_artifact_corrupt` instead of returning a misleading empty result set.
 
 Text output includes:
+- `run_id` for the persisted semantic-query provenance row
 - Retrieval mode plus repository, snapshot, build, query, latency, provider, model, vector engine, and semantic configuration fingerprint metadata.
 - One ranked block per result with stable `chunk_id`, relative path, span metadata, language/strategy, score, compact preview text, and a truthful semantic explanation.
 - The same top-20 cap and truncated-count reporting used by `query lexical`.
@@ -306,7 +343,7 @@ Text output includes:
 auto-enable an external provider from config alone.
 
 JSON output keeps the standard success envelope on `stdout` and exposes the same retrieval package fields, with
-semantic build metadata under `data.build`:
+semantic build metadata under `data.build` plus `data.run_id`:
 
 ```json
 {
@@ -378,14 +415,15 @@ If the lexical and semantic component paths resolve different repository snapsho
 `hybrid_snapshot_mismatch` instead of fusing mixed-state evidence.
 
 Text output includes:
+- `run_id` for the persisted hybrid-query provenance row
 - Retrieval mode plus repository, snapshot, synthetic hybrid build id, query, and latency metadata.
-- Fusion metadata: fusion strategy, rank constant, rank window size, lexical build id, semantic build id, and semantic provider/model attribution.
+- Fusion metadata: fusion strategy, rank constant, rank window size, lexical build id, lexical indexing fingerprint, semantic build id, and semantic provider/model attribution.
 - Per-component diagnostics for lexical and semantic retrieval, including latency, component match counts, and how many final fused results each component contributed.
 - One ranked block per result with stable `chunk_id`, relative path, span metadata, language/strategy, fused score, compact preview text, and a truthful explanation stating whether lexical evidence, semantic evidence, or both contributed to the final rank.
 
 JSON output keeps the standard success envelope on `stdout` and exposes the shared retrieval package shape, with
-hybrid fusion and component provenance nested under `data.build`, and per-component diagnostics nested under
-`data.diagnostics`:
+hybrid fusion and component provenance nested under `data.build`, `data.run_id` for later
+inspection, and per-component diagnostics nested under `data.diagnostics`:
 
 ```json
 {
@@ -411,6 +449,7 @@ hybrid fusion and component provenance nested under `data.build`, and per-compon
       "rank_window_size": 50,
       "lexical_build": {
         "build_id": "lexical-build-123",
+        "indexing_config_fingerprint": "indexing-fingerprint-123",
         "lexical_engine": "sqlite-fts5",
         "tokenizer_spec": "unicode61 remove_diacritics 0 tokenchars '_'",
         "indexed_fields": ["content", "relative_path"]
@@ -498,6 +537,7 @@ If lexical and semantic comparison inputs resolve different repository snapshots
 `compare_retrieval_mode_snapshot_mismatch` instead of presenting a misleading side-by-side comparison.
 
 Text output includes:
+- `run_id` for the persisted comparison provenance row
 - Shared repository, snapshot, query, latency, and compared-mode metadata for the full comparison run.
 - One summary line per mode using the same returned-count and truncation semantics as the standalone
   query commands.
@@ -506,7 +546,8 @@ Text output includes:
 - Clearly labeled `Lexical Results`, `Semantic Results`, and `Hybrid Results` blocks that preserve the
   standard ranked retrieval item shape.
 
-JSON output keeps the standard success envelope on `stdout` and exposes a stable comparison package:
+JSON output keeps the standard success envelope on `stdout` and exposes a stable comparison package
+with additive `data.run_id` for provenance inspection:
 
 ```json
 {

@@ -27,12 +27,19 @@ from codeman.application.ports.semantic_index_build_store_port import (
     SemanticIndexBuildStorePort,
 )
 from codeman.application.ports.snapshot_port import SnapshotMetadataStorePort
+from codeman.application.provenance.record_run_provenance import (
+    RecordRunConfigurationProvenanceUseCase,
+)
 from codeman.config.embedding_providers import EmbeddingProvidersConfig
 from codeman.config.semantic_indexing import (
     SemanticIndexingConfig,
     build_semantic_indexing_fingerprint,
 )
 from codeman.contracts.chunking import ChunkPayloadDocument, ChunkRecord
+from codeman.contracts.configuration import (
+    RecordRunConfigurationProvenanceRequest,
+    RunProvenanceWorkflowContext,
+)
 from codeman.contracts.retrieval import (
     BuildSemanticIndexRequest,
     BuildSemanticIndexResult,
@@ -103,6 +110,7 @@ class BuildSemanticIndexUseCase:
     semantic_index_build_store: SemanticIndexBuildStorePort
     semantic_indexing_config: SemanticIndexingConfig
     embedding_providers_config: EmbeddingProvidersConfig
+    record_run_provenance: RecordRunConfigurationProvenanceUseCase | None = None
 
     def execute(self, request: BuildSemanticIndexRequest) -> BuildSemanticIndexResult:
         """Build and record semantic artifacts for the requested snapshot."""
@@ -175,7 +183,25 @@ class BuildSemanticIndexUseCase:
                 created_at=created_at,
             ),
         )
+        provenance_run_id: str | None = None
+        if self.record_run_provenance is not None:
+            provenance = self.record_run_provenance.execute(
+                RecordRunConfigurationProvenanceRequest(
+                    workflow_type="index.build-semantic",
+                    repository_id=repository.repository_id,
+                    snapshot_id=snapshot.snapshot_id,
+                    semantic_config_fingerprint=build_record.semantic_config_fingerprint,
+                    provider_id=build_record.provider_id,
+                    model_id=build_record.model_id,
+                    model_version=build_record.model_version,
+                    workflow_context=RunProvenanceWorkflowContext(
+                        semantic_build_id=build_record.build_id,
+                    ),
+                )
+            )
+            provenance_run_id = provenance.run_id
         return BuildSemanticIndexResult(
+            run_id=provenance_run_id,
             repository=repository,
             snapshot=snapshot,
             build=build_record,

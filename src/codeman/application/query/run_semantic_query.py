@@ -23,6 +23,9 @@ from codeman.application.ports.semantic_query_port import (
     SemanticVectorArtifactCorruptError,
 )
 from codeman.application.ports.snapshot_port import SnapshotMetadataStorePort
+from codeman.application.provenance.record_run_provenance import (
+    RecordRunConfigurationProvenanceUseCase,
+)
 from codeman.application.query.format_results import (
     ResolvedSemanticMatch,
     RetrievalResultFormatter,
@@ -31,6 +34,10 @@ from codeman.config.embedding_providers import EmbeddingProvidersConfig
 from codeman.config.semantic_indexing import (
     SemanticIndexingConfig,
     build_semantic_indexing_fingerprint,
+)
+from codeman.contracts.configuration import (
+    RecordRunConfigurationProvenanceRequest,
+    RunProvenanceWorkflowContext,
 )
 from codeman.contracts.errors import ErrorCode
 from codeman.contracts.retrieval import (
@@ -173,6 +180,7 @@ class RunSemanticQueryUseCase:
     formatter: RetrievalResultFormatter
     semantic_indexing_config: SemanticIndexingConfig
     embedding_providers_config: EmbeddingProvidersConfig
+    record_run_provenance: RecordRunConfigurationProvenanceUseCase | None = None
 
     def execute(self, request: RunSemanticQueryRequest) -> RunSemanticQueryResult:
         """Run a semantic query against the current repository build."""
@@ -309,7 +317,7 @@ class RunSemanticQueryUseCase:
             ) from exc
 
         resolved_matches = self._resolve_matches(query_result.matches)
-        return self.formatter.format_semantic_results(
+        result = self.formatter.format_semantic_results(
             repository=repository,
             snapshot=snapshot,
             build=build,
@@ -317,6 +325,25 @@ class RunSemanticQueryUseCase:
             diagnostics=query_result.diagnostics,
             matches=resolved_matches,
         )
+        if not request.record_provenance or self.record_run_provenance is None:
+            return result
+
+        provenance = self.record_run_provenance.execute(
+            RecordRunConfigurationProvenanceRequest(
+                workflow_type="query.semantic",
+                repository_id=repository.repository_id,
+                snapshot_id=snapshot.snapshot_id,
+                semantic_config_fingerprint=build.semantic_config_fingerprint,
+                provider_id=build.provider_id,
+                model_id=build.model_id,
+                model_version=build.model_version,
+                workflow_context=RunProvenanceWorkflowContext(
+                    semantic_build_id=build.build_id,
+                    max_results=request.max_results,
+                ),
+            )
+        )
+        return result.model_copy(update={"run_id": provenance.run_id})
 
     def _resolve_matches(
         self,

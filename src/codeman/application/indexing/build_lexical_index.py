@@ -14,8 +14,15 @@ from codeman.application.ports.index_build_store_port import IndexBuildStorePort
 from codeman.application.ports.lexical_index_port import LexicalIndexPort
 from codeman.application.ports.metadata_store_port import RepositoryMetadataStorePort
 from codeman.application.ports.snapshot_port import SnapshotMetadataStorePort
+from codeman.application.provenance.record_run_provenance import (
+    RecordRunConfigurationProvenanceUseCase,
+)
 from codeman.config.indexing import IndexingConfig, build_indexing_fingerprint
 from codeman.contracts.chunking import ChunkPayloadDocument, ChunkRecord
+from codeman.contracts.configuration import (
+    RecordRunConfigurationProvenanceRequest,
+    RunProvenanceWorkflowContext,
+)
 from codeman.contracts.errors import ErrorCode
 from codeman.contracts.retrieval import (
     BuildLexicalIndexRequest,
@@ -120,6 +127,7 @@ class BuildLexicalIndexUseCase:
     lexical_index: LexicalIndexPort
     index_build_store: IndexBuildStorePort
     indexing_config: IndexingConfig
+    record_run_provenance: RecordRunConfigurationProvenanceUseCase | None = None
 
     def execute(self, request: BuildLexicalIndexRequest) -> BuildLexicalIndexResult:
         """Build and record lexical artifacts for the requested snapshot."""
@@ -149,10 +157,7 @@ class BuildLexicalIndexUseCase:
                 f"`codeman index build-chunks {snapshot.snapshot_id}` first.",
             )
 
-        documents = [
-            self._load_document(chunk)
-            for chunk in _ordered_chunks(chunks)
-        ]
+        documents = [self._load_document(chunk) for chunk in _ordered_chunks(chunks)]
 
         try:
             artifact = self.lexical_index.build(
@@ -169,8 +174,7 @@ class BuildLexicalIndexUseCase:
 
         created_at = datetime.now(UTC)
         indexing_config_fingerprint = (
-            snapshot.indexing_config_fingerprint
-            or build_indexing_fingerprint(self.indexing_config)
+            snapshot.indexing_config_fingerprint or build_indexing_fingerprint(self.indexing_config)
         )
         build_record = self.index_build_store.create_build(
             LexicalIndexBuildRecord(
@@ -188,7 +192,22 @@ class BuildLexicalIndexUseCase:
                 created_at=created_at,
             ),
         )
+        provenance_run_id: str | None = None
+        if self.record_run_provenance is not None:
+            provenance = self.record_run_provenance.execute(
+                RecordRunConfigurationProvenanceRequest(
+                    workflow_type="index.build-lexical",
+                    repository_id=repository.repository_id,
+                    snapshot_id=snapshot.snapshot_id,
+                    indexing_config_fingerprint=build_record.indexing_config_fingerprint,
+                    workflow_context=RunProvenanceWorkflowContext(
+                        lexical_build_id=build_record.build_id,
+                    ),
+                )
+            )
+            provenance_run_id = provenance.run_id
         return BuildLexicalIndexResult(
+            run_id=provenance_run_id,
             repository=repository,
             snapshot=snapshot,
             build=build_record,

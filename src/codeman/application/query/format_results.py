@@ -95,6 +95,7 @@ class RetrievalResultFormatter:
             ),
             build=LexicalRetrievalBuildContext(
                 build_id=build.build_id,
+                indexing_config_fingerprint=build.indexing_config_fingerprint,
                 lexical_engine=build.lexical_engine,
                 tokenizer_spec=build.tokenizer_spec,
                 indexed_fields=list(build.indexed_fields),

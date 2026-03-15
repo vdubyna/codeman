@@ -160,3 +160,21 @@ retrieval_strategy_profiles_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     UniqueConstraint("name", name="uq_retrieval_strategy_profiles_name"),
 )
+
+run_provenance_records_table = Table(
+    "run_provenance_records",
+    metadata,
+    Column("id", String(length=64), primary_key=True),
+    Column("workflow_type", String(length=64), nullable=False),
+    Column("repository_id", String(length=32), ForeignKey("repositories.id"), nullable=False),
+    Column("snapshot_id", String(length=32), ForeignKey("snapshots.id"), nullable=True),
+    Column("configuration_id", String(length=64), nullable=False),
+    Column("indexing_config_fingerprint", String(length=64), nullable=True),
+    Column("semantic_config_fingerprint", String(length=64), nullable=True),
+    Column("provider_id", String(length=128), nullable=True),
+    Column("model_id", String(length=255), nullable=True),
+    Column("model_version", String(length=255), nullable=True),
+    Column("effective_config_json", Text(), nullable=False),
+    Column("workflow_context_json", Text(), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)

@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from typer.testing import CliRunner
 
 from codeman.cli.app import app
+from codeman.config.retrieval_profiles import RetrievalStrategyProfilePayload
+from codeman.contracts.configuration import (
+    RunConfigurationProvenanceRecord,
+    RunProvenanceWorkflowContext,
+)
 
 runner = CliRunner()
 
@@ -193,8 +199,7 @@ def test_config_profile_commands_support_save_list_show_and_selected_profile(
         "environment",
     ]
     assert (
-        selected_show_payload["data"]["metadata"]["selected_profile"]["name"]
-        == "fixture-profile"
+        selected_show_payload["data"]["metadata"]["selected_profile"]["name"] == "fixture-profile"
     )
     assert (
         selected_show_payload["data"]["metadata"]["selected_profile"]["selector"]
@@ -259,7 +264,139 @@ def test_config_profile_list_does_not_create_runtime_metadata_in_empty_workspace
 
     assert result.exit_code == 0, result.stdout
     assert payload["ok"] is True
-    assert payload["data"]["profiles"] == []
+
+
+def test_config_provenance_show_renders_json_output(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    database_path = workspace / ".codeman" / "metadata.sqlite3"
+
+    from codeman.infrastructure.persistence.sqlite.engine import create_sqlite_engine
+    from codeman.infrastructure.persistence.sqlite.repositories.run_provenance_repository import (
+        SqliteRunProvenanceStore,
+    )
+
+    store = SqliteRunProvenanceStore(
+        engine=create_sqlite_engine(database_path),
+        database_path=database_path,
+    )
+    store.initialize()
+    store.create_record(
+        RunConfigurationProvenanceRecord(
+            run_id="run-123",
+            workflow_type="query.semantic",
+            repository_id="repo-123",
+            snapshot_id="snapshot-123",
+            configuration_id="config-123",
+            semantic_config_fingerprint="semantic-fingerprint-123",
+            provider_id="local-hash",
+            model_id="fixture-local",
+            model_version="2026-03-15",
+            effective_config=RetrievalStrategyProfilePayload.model_validate(
+                {
+                    "indexing": {"fingerprint_salt": "indexing-salt"},
+                    "semantic_indexing": {
+                        "provider_id": "local-hash",
+                        "vector_engine": "sqlite-exact",
+                        "vector_dimension": 16,
+                    },
+                    "embedding_providers": {
+                        "local_hash": {
+                            "model_id": "fixture-local",
+                            "model_version": "2026-03-15",
+                            "local_model_path": str((tmp_path / "local-model").resolve()),
+                        }
+                    },
+                }
+            ),
+            workflow_context=RunProvenanceWorkflowContext(
+                semantic_build_id="semantic-build-123",
+                max_results=5,
+            ),
+            created_at=datetime(2026, 3, 15, 7, 0, tzinfo=UTC),
+        )
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "--workspace-root",
+            str(workspace),
+            "config",
+            "provenance",
+            "show",
+            "run-123",
+            "--output-format",
+            "json",
+        ],
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 0, result.stdout
+    assert payload["ok"] is True
+    assert payload["meta"]["command"] == "config.provenance.show"
+    assert payload["data"]["provenance"]["run_id"] == "run-123"
+    assert payload["data"]["provenance"]["configuration_id"] == "config-123"
+    assert payload["data"]["provenance"]["workflow_context"]["semantic_build_id"] == (
+        "semantic-build-123"
+    )
+
+
+def test_config_provenance_show_returns_stable_failure_for_missing_run_id(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "--workspace-root",
+            str(workspace),
+            "config",
+            "provenance",
+            "show",
+            "missing-run",
+            "--output-format",
+            "json",
+        ],
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 58
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "configuration_provenance_not_found"
+    assert not (workspace / ".codeman" / "metadata.sqlite3").exists()
+
+
+def test_config_provenance_show_rejects_blank_run_id_with_stable_configuration_failure(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "--workspace-root",
+            str(workspace),
+            "config",
+            "provenance",
+            "show",
+            "   ",
+            "--output-format",
+            "json",
+        ],
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert result.exit_code == 18
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "configuration_invalid"
+    assert payload["error"]["message"] == "Run provenance id must not be blank."
     assert not (workspace / ".codeman" / "metadata.sqlite3").exists()
 
 

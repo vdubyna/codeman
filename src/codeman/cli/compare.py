@@ -90,6 +90,7 @@ def _render_alignment_line(index: int, entry: RetrievalModeRankAlignment) -> str
 def _render_text_output(result: CompareRetrievalModesResult) -> str:
     lines = [
         "Retrieval mode comparison completed.",
+        f"Run ID: {result.run_id}",
         f"Compared Modes: {', '.join(result.diagnostics.compared_modes)}",
         f"Repository ID: {result.repository.repository_id}",
         f"Snapshot ID: {result.snapshot.snapshot_id}",

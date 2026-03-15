@@ -218,6 +218,7 @@ class BuildLexicalIndexResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    run_id: str | None = None
     repository: RepositoryRecord
     snapshot: SnapshotRecord
     build: LexicalIndexBuildRecord
@@ -229,6 +230,7 @@ class BuildSemanticIndexResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    run_id: str | None = None
     repository: RepositoryRecord
     snapshot: SnapshotRecord
     build: SemanticIndexBuildRecord
@@ -244,6 +246,7 @@ class RunLexicalQueryRequest(BaseModel):
     repository_id: str
     query_text: str
     max_results: int = Field(default=20, gt=0, le=100)
+    record_provenance: bool = True
 
 
 class RunSemanticQueryRequest(BaseModel):
@@ -254,6 +257,7 @@ class RunSemanticQueryRequest(BaseModel):
     repository_id: str
     query_text: str
     max_results: int = Field(default=20, gt=0, le=100)
+    record_provenance: bool = True
 
 
 class RunHybridQueryRequest(BaseModel):
@@ -314,6 +318,7 @@ class RetrievalBuildContext(BaseModel):
 class LexicalRetrievalBuildContext(RetrievalBuildContext):
     """Compact lexical build identity for retrieval output."""
 
+    indexing_config_fingerprint: str | None = None
     lexical_engine: str
     tokenizer_spec: str
     indexed_fields: list[str] = Field(default_factory=list)
@@ -446,6 +451,7 @@ class RetrievalResultPackage(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    run_id: str | None = None
     retrieval_mode: RetrievalMode
     query: RetrievalQueryMetadata
     repository: RetrievalRepositoryContext
@@ -525,6 +531,7 @@ class CompareRetrievalModesResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    run_id: str | None = None
     query: RetrievalQueryMetadata
     repository: RetrievalRepositoryContext
     snapshot: RetrievalSnapshotContext

@@ -24,6 +24,12 @@ from codeman.application.indexing.build_lexical_index import BuildLexicalIndexUs
 from codeman.application.indexing.build_semantic_index import BuildSemanticIndexUseCase
 from codeman.application.indexing.build_vector_index import BuildVectorIndexStage
 from codeman.application.indexing.extract_source_files import ExtractSourceFilesUseCase
+from codeman.application.provenance.record_run_provenance import (
+    RecordRunConfigurationProvenanceUseCase,
+)
+from codeman.application.provenance.show_run_provenance import (
+    ShowRunConfigurationProvenanceUseCase,
+)
 from codeman.application.query.compare_retrieval_modes import CompareRetrievalModesUseCase
 from codeman.application.query.format_results import RetrievalResultFormatter
 from codeman.application.query.run_hybrid_query import RunHybridQueryUseCase
@@ -72,6 +78,9 @@ from codeman.infrastructure.persistence.sqlite.repositories.repository_repositor
 from codeman.infrastructure.persistence.sqlite.repositories.retrieval_profile_repository import (
     SqliteRetrievalStrategyProfileStore,
 )
+from codeman.infrastructure.persistence.sqlite.repositories.run_provenance_repository import (
+    SqliteRunProvenanceStore,
+)
 from codeman.infrastructure.persistence.sqlite.repositories.semantic_index_build_repository import (
     SqliteSemanticIndexBuildStore,
 )
@@ -102,6 +111,7 @@ class BootstrapContainer:
     index_build_store: SqliteIndexBuildStore
     semantic_index_build_store: SqliteSemanticIndexBuildStore
     retrieval_profile_store: SqliteRetrievalStrategyProfileStore
+    run_provenance_store: SqliteRunProvenanceStore
     register_repository: RegisterRepositoryUseCase
     create_snapshot: CreateSnapshotUseCase
     extract_source_files: ExtractSourceFilesUseCase
@@ -116,6 +126,8 @@ class BootstrapContainer:
     save_retrieval_strategy_profile: SaveRetrievalStrategyProfileUseCase
     list_retrieval_strategy_profiles: ListRetrievalStrategyProfilesUseCase
     show_retrieval_strategy_profile: ShowRetrievalStrategyProfileUseCase
+    record_run_provenance: RecordRunConfigurationProvenanceUseCase
+    show_run_provenance: ShowRunConfigurationProvenanceUseCase
 
 
 def bootstrap(
@@ -210,6 +222,10 @@ def bootstrap(
         engine=snapshot_engine,
         database_path=runtime_paths.metadata_database_path,
     )
+    run_provenance_store = SqliteRunProvenanceStore(
+        engine=snapshot_engine,
+        database_path=runtime_paths.metadata_database_path,
+    )
     reindex_run_store = SqliteReindexRunStore(
         engine=snapshot_engine,
         database_path=runtime_paths.metadata_database_path,
@@ -236,6 +252,13 @@ def bootstrap(
         revision_resolver=revision_resolver,
         source_scanner=source_scanner,
     )
+    record_run_provenance = RecordRunConfigurationProvenanceUseCase(
+        config=config,
+        provenance_store=run_provenance_store,
+    )
+    show_run_provenance = ShowRunConfigurationProvenanceUseCase(
+        provenance_store=run_provenance_store,
+    )
     build_chunks = BuildChunksUseCase(
         runtime_paths=runtime_paths,
         repository_store=metadata_store,
@@ -247,6 +270,7 @@ def bootstrap(
         chunker_registry=ChunkerRegistry(),
         artifact_store=artifact_store,
         indexing_config=config.indexing,
+        record_run_provenance=record_run_provenance,
     )
     build_lexical_index = BuildLexicalIndexUseCase(
         runtime_paths=runtime_paths,
@@ -257,6 +281,7 @@ def bootstrap(
         lexical_index=SqliteFts5LexicalIndexBuilder(runtime_paths=runtime_paths),
         index_build_store=index_build_store,
         indexing_config=config.indexing,
+        record_run_provenance=record_run_provenance,
     )
     build_semantic_index = BuildSemanticIndexUseCase(
         runtime_paths=runtime_paths,
@@ -277,6 +302,7 @@ def bootstrap(
         semantic_index_build_store=semantic_index_build_store,
         semantic_indexing_config=config.semantic_indexing,
         embedding_providers_config=config.embedding_providers,
+        record_run_provenance=record_run_provenance,
     )
     run_lexical_query = RunLexicalQueryUseCase(
         runtime_paths=runtime_paths,
@@ -287,6 +313,7 @@ def bootstrap(
         artifact_store=artifact_store,
         lexical_query=SqliteFts5LexicalQueryEngine(),
         formatter=RetrievalResultFormatter(),
+        record_run_provenance=record_run_provenance,
     )
     run_semantic_query = RunSemanticQueryUseCase(
         runtime_paths=runtime_paths,
@@ -300,15 +327,18 @@ def bootstrap(
         formatter=RetrievalResultFormatter(),
         semantic_indexing_config=config.semantic_indexing,
         embedding_providers_config=config.embedding_providers,
+        record_run_provenance=record_run_provenance,
     )
     run_hybrid_query = RunHybridQueryUseCase(
         run_lexical_query=run_lexical_query,
         run_semantic_query=run_semantic_query,
+        record_run_provenance=record_run_provenance,
         formatter=RetrievalResultFormatter(),
     )
     compare_retrieval_modes = CompareRetrievalModesUseCase(
         run_lexical_query=run_lexical_query,
         run_semantic_query=run_semantic_query,
+        record_run_provenance=record_run_provenance,
         formatter=RetrievalResultFormatter(),
     )
     reindex_repository = ReindexRepositoryUseCase(
@@ -326,6 +356,7 @@ def bootstrap(
         chunker_registry=ChunkerRegistry(),
         artifact_store=artifact_store,
         indexing_config=config.indexing,
+        record_run_provenance=record_run_provenance,
     )
     save_retrieval_strategy_profile = SaveRetrievalStrategyProfileUseCase(
         config=config,
@@ -348,6 +379,7 @@ def bootstrap(
         index_build_store=index_build_store,
         semantic_index_build_store=semantic_index_build_store,
         retrieval_profile_store=retrieval_profile_store,
+        run_provenance_store=run_provenance_store,
         register_repository=register_repository,
         create_snapshot=create_snapshot,
         extract_source_files=extract_source_files,
@@ -362,4 +394,6 @@ def bootstrap(
         save_retrieval_strategy_profile=save_retrieval_strategy_profile,
         list_retrieval_strategy_profiles=list_retrieval_strategy_profiles,
         show_retrieval_strategy_profile=show_retrieval_strategy_profile,
+        record_run_provenance=record_run_provenance,
+        show_run_provenance=show_run_provenance,
     )
