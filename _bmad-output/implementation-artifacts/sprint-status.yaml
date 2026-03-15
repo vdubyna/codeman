@@ -1,5 +1,5 @@
 # generated: 2026-03-13 23:42:21 +0200
-# last_updated: 2026-03-15 06:46:11 +0200
+# last_updated: 2026-03-15 09:48:03 +0200
 # project: codeman
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-03-13 23:42:21 +0200"
-last_updated: "2026-03-15 07:00:58 +0200"
+last_updated: "2026-03-15 10:36:35 +0200"
 project: codeman
 project_key: NOKEY
 tracking_system: file-system
@@ -66,7 +66,7 @@ development_status:
   3-2-configure-embedding-providers-independently: done
   3-3-create-reusable-retrieval-strategy-profiles: done
   3-4-record-configuration-provenance-for-every-run: done
-  3-5-reuse-prior-configurations-in-later-experiments: backlog
+  3-5-reuse-prior-configurations-in-later-experiments: done
   3-6-key-caches-to-configuration-and-content-identity: backlog
   epic-3-retrospective: optional
 

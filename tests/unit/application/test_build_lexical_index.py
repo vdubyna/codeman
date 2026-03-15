@@ -13,7 +13,7 @@ from codeman.application.indexing.build_lexical_index import (
     ChunkPayloadMissingError,
     LexicalSnapshotNotFoundError,
 )
-from codeman.config.indexing import IndexingConfig
+from codeman.config.indexing import IndexingConfig, build_indexing_fingerprint
 from codeman.contracts.chunking import ChunkPayloadDocument, ChunkRecord
 from codeman.contracts.repository import RepositoryRecord, SnapshotRecord
 from codeman.contracts.retrieval import (
@@ -26,6 +26,8 @@ from codeman.infrastructure.artifacts.filesystem_artifact_store import (
     FilesystemArtifactStore,
 )
 from codeman.runtime import build_runtime_paths
+
+DEFAULT_INDEXING_FINGERPRINT = build_indexing_fingerprint(IndexingConfig())
 
 
 @dataclass
@@ -147,7 +149,7 @@ def build_snapshot_record(
     workspace: Path,
     *,
     chunk_generation_completed_at: datetime | None = None,
-    indexing_config_fingerprint: str | None = "fingerprint-123",
+    indexing_config_fingerprint: str | None = DEFAULT_INDEXING_FINGERPRINT,
 ) -> SnapshotRecord:
     return SnapshotRecord(
         snapshot_id="snapshot-123",
@@ -300,10 +302,76 @@ def test_build_lexical_index_reads_payloads_in_deterministic_order_and_records_m
     assert result.diagnostics.chunks_indexed == 2
     assert result.build.repository_id == repository.repository_id
     assert result.build.snapshot_id == snapshot.snapshot_id
-    assert result.build.indexing_config_fingerprint == "fingerprint-123"
+    assert result.build.indexing_config_fingerprint == DEFAULT_INDEXING_FINGERPRINT
     assert result.build.indexed_fields == ["content", "relative_path"]
     assert index_build_store.created_builds
     assert index_build_store.created_builds[0].index_path == result.build.index_path
+
+
+def test_build_lexical_index_requires_chunk_baseline_for_current_configuration(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    repository_path.mkdir()
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(
+        repository.repository_id,
+        workspace,
+        chunk_generation_completed_at=datetime.now(UTC),
+    )
+    runtime_paths = build_runtime_paths(workspace)
+    artifact_store = FilesystemArtifactStore(runtime_paths.artifacts)
+    payload_path = artifact_store.write_chunk_payload(
+        ChunkPayloadDocument(
+            chunk_id="source-a:javascript_structure:1",
+            snapshot_id=snapshot.snapshot_id,
+            repository_id=repository.repository_id,
+            source_file_id="source-a",
+            relative_path="assets/app.js",
+            language="javascript",
+            strategy="javascript_structure",
+            source_content_hash="hash-source-a",
+            start_line=1,
+            end_line=3,
+            start_byte=0,
+            end_byte=42,
+            content="export function boot() { return 'ok'; }",
+        ),
+        snapshot_id=snapshot.snapshot_id,
+    )
+    index_build_store = FakeIndexBuildStore()
+    use_case = BuildLexicalIndexUseCase(
+        runtime_paths=runtime_paths,
+        repository_store=FakeRepositoryStore(repository=repository),
+        snapshot_store=FakeSnapshotStore(snapshot=snapshot),
+        chunk_store=FakeChunkStore(
+            chunks=[
+                build_chunk_record(
+                    snapshot_id=snapshot.snapshot_id,
+                    repository_id=repository.repository_id,
+                    source_file_id="source-a",
+                    relative_path="assets/app.js",
+                    language="javascript",
+                    strategy="javascript_structure",
+                    payload_path=payload_path,
+                    start_line=1,
+                    start_byte=0,
+                )
+            ],
+        ),
+        artifact_store=artifact_store,
+        lexical_index=FakeLexicalIndexBuilder(runtime_root=runtime_paths.root),
+        index_build_store=index_build_store,
+        indexing_config=IndexingConfig(fingerprint_salt="profile-v2"),
+    )
+
+    with pytest.raises(ChunkBaselineMissingError) as exc_info:
+        use_case.execute(BuildLexicalIndexRequest(snapshot_id=snapshot.snapshot_id))
+
+    assert "current configuration" in exc_info.value.message
+    assert index_build_store.created_builds == []
 
 
 def test_build_lexical_index_requires_existing_chunk_baseline(tmp_path: Path) -> None:

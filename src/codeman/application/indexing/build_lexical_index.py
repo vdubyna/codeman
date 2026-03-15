@@ -82,6 +82,18 @@ class ChunkPayloadCorruptError(BuildLexicalIndexError):
     error_code = ErrorCode.CHUNK_PAYLOAD_CORRUPT
 
 
+def _missing_chunk_baseline_message(
+    snapshot_id: str,
+    *,
+    current_configuration: bool = False,
+) -> str:
+    qualifier = " and current configuration" if current_configuration else ""
+    return (
+        f"Chunk baseline is missing for snapshot{qualifier}; run "
+        f"`codeman index build-chunks {snapshot_id}` first."
+    )
+
+
 def _ordered_chunks(chunks: list[ChunkRecord]) -> list[ChunkRecord]:
     return sorted(
         chunks,
@@ -153,8 +165,18 @@ class BuildLexicalIndexUseCase:
         chunks = self.chunk_store.list_by_snapshot(snapshot.snapshot_id)
         if not chunks:
             raise ChunkBaselineMissingError(
-                "Chunk baseline is missing for snapshot; run "
-                f"`codeman index build-chunks {snapshot.snapshot_id}` first.",
+                _missing_chunk_baseline_message(snapshot.snapshot_id),
+            )
+        current_indexing_fingerprint = build_indexing_fingerprint(self.indexing_config)
+        if (
+            snapshot.indexing_config_fingerprint is not None
+            and snapshot.indexing_config_fingerprint != current_indexing_fingerprint
+        ):
+            raise ChunkBaselineMissingError(
+                _missing_chunk_baseline_message(
+                    snapshot.snapshot_id,
+                    current_configuration=True,
+                )
             )
 
         documents = [self._load_document(chunk) for chunk in _ordered_chunks(chunks)]
@@ -174,7 +196,7 @@ class BuildLexicalIndexUseCase:
 
         created_at = datetime.now(UTC)
         indexing_config_fingerprint = (
-            snapshot.indexing_config_fingerprint or build_indexing_fingerprint(self.indexing_config)
+            snapshot.indexing_config_fingerprint or current_indexing_fingerprint
         )
         build_record = self.index_build_store.create_build(
             LexicalIndexBuildRecord(

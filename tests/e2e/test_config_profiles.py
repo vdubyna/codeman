@@ -172,6 +172,14 @@ def test_uv_run_config_profile_can_drive_config_index_query_and_compare(
         config_show_payload["data"]["metadata"]["selected_profile"]["name"]
         == "fixture-profile"
     )
+    assert (
+        config_show_payload["data"]["metadata"]["configuration_reuse"]["reuse_kind"]
+        == "profile_reuse"
+    )
+    assert (
+        config_show_payload["data"]["metadata"]["configuration_reuse"]["base_profile_id"]
+        == config_show_payload["data"]["metadata"]["selected_profile"]["profile_id"]
+    )
     assert config_show_payload["data"]["semantic_indexing"]["model_id"] == "fixture-local"
     assert register_result.returncode == 0, register_result.stderr
     assert snapshot_result.returncode == 0, snapshot_result.stderr

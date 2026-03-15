@@ -16,6 +16,7 @@ from codeman.config.loader import ConfigurationResolutionError
 from codeman.config.provenance import build_effective_config_provenance_canonical_json
 from codeman.config.retrieval_profiles import RetrievalStrategyProfilePayload
 from codeman.contracts.configuration import (
+    ConfigurationReuseLineage,
     RunConfigurationProvenanceRecord,
     RunProvenanceWorkflowContext,
 )
@@ -57,6 +58,9 @@ class SqliteRunProvenanceStore(RunProvenanceStorePort):
             repository_id=record.repository_id,
             snapshot_id=record.snapshot_id,
             configuration_id=record.configuration_id,
+            base_profile_id=record.configuration_reuse.base_profile_id,
+            base_profile_name=record.configuration_reuse.base_profile_name,
+            reuse_kind=record.configuration_reuse.reuse_kind,
             indexing_config_fingerprint=record.indexing_config_fingerprint,
             semantic_config_fingerprint=record.semantic_config_fingerprint,
             provider_id=record.provider_id,
@@ -77,6 +81,7 @@ class SqliteRunProvenanceStore(RunProvenanceStorePort):
 
         if not self._table_exists():
             return None
+        upgrade_database(self.database_path)
 
         query = (
             select(run_provenance_records_table)
@@ -95,6 +100,7 @@ class SqliteRunProvenanceStore(RunProvenanceStorePort):
 
         if not self._table_exists():
             return []
+        upgrade_database(self.database_path)
 
         query = (
             select(run_provenance_records_table)
@@ -139,6 +145,12 @@ class SqliteRunProvenanceStore(RunProvenanceStorePort):
             repository_id=row["repository_id"],
             snapshot_id=row["snapshot_id"],
             configuration_id=row["configuration_id"],
+            configuration_reuse=ConfigurationReuseLineage(
+                reuse_kind=row["reuse_kind"],
+                effective_configuration_id=row["configuration_id"],
+                base_profile_id=row["base_profile_id"],
+                base_profile_name=row["base_profile_name"],
+            ),
             indexing_config_fingerprint=row["indexing_config_fingerprint"],
             semantic_config_fingerprint=row["semantic_config_fingerprint"],
             provider_id=row["provider_id"],

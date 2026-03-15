@@ -83,8 +83,9 @@ class SqliteIndexBuildStore(IndexBuildStorePort):
     def get_latest_build_for_repository(
         self,
         repository_id: str,
+        indexing_config_fingerprint: str,
     ) -> LexicalIndexBuildRecord | None:
-        """Return the current lexical-index build for the latest indexed snapshot."""
+        """Return the current lexical-index build for the latest indexed snapshot/config pair."""
 
         if not self.database_path.exists():
             return None
@@ -119,6 +120,8 @@ class SqliteIndexBuildStore(IndexBuildStorePort):
                 .where(
                     lexical_index_builds_table.c.repository_id == repository_id,
                     lexical_index_builds_table.c.snapshot_id == snapshot_row["id"],
+                    lexical_index_builds_table.c.indexing_config_fingerprint
+                    == indexing_config_fingerprint,
                 )
                 .order_by(
                     desc(lexical_index_builds_table.c.created_at),

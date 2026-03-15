@@ -8,10 +8,12 @@ import pytest
 
 from codeman.application.query.run_lexical_query import (
     LexicalArtifactMissingError,
+    LexicalBuildBaselineMissingError,
     LexicalQueryChunkMetadataMissingError,
     LexicalQueryChunkPayloadMissingError,
 )
 from codeman.bootstrap import bootstrap
+from codeman.config.indexing import IndexingConfig, build_indexing_fingerprint
 from codeman.contracts.chunking import BuildChunksRequest
 from codeman.contracts.reindexing import ReindexRepositoryRequest
 from codeman.contracts.repository import (
@@ -142,7 +144,10 @@ def test_run_lexical_query_fails_when_build_artifact_is_missing(tmp_path: Path) 
         workspace=workspace,
         repository_path=repository_path,
     )
-    build = container.index_build_store.get_latest_build_for_repository(repository_id)
+    build = container.index_build_store.get_latest_build_for_repository(
+        repository_id,
+        build_indexing_fingerprint(IndexingConfig()),
+    )
     assert build is not None
     build.index_path.unlink()
 
@@ -212,3 +217,43 @@ def test_run_lexical_query_fails_when_ranked_chunk_payload_is_missing(
                 query_text="HomeController",
             ),
         )
+
+
+def test_run_lexical_query_fails_when_latest_snapshot_has_no_matching_config_baseline(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    shutil.copytree(FIXTURE_REPOSITORY, repository_path)
+
+    baseline_container, repository_id, _ = prepare_lexical_repository(
+        workspace=workspace,
+        repository_path=repository_path,
+    )
+    (repository_path / "assets" / "app.js").write_text(
+        'export function boot() {\n  return "fresh";\n}\n',
+        encoding="utf-8",
+    )
+
+    reindex_result = baseline_container.reindex_repository.execute(
+        ReindexRepositoryRequest(repository_id=repository_id),
+    )
+    baseline_container.build_lexical_index.execute(
+        BuildLexicalIndexRequest(snapshot_id=reindex_result.result_snapshot_id),
+    )
+
+    profiled_container = bootstrap(
+        workspace_root=workspace,
+        environ={"CODEMAN_INDEXING_FINGERPRINT_SALT": "profile-v2"},
+    )
+
+    with pytest.raises(LexicalBuildBaselineMissingError) as exc_info:
+        profiled_container.run_lexical_query.execute(
+            RunLexicalQueryRequest(
+                repository_id=repository_id,
+                query_text="fresh",
+            ),
+        )
+
+    assert "current configuration" in exc_info.value.message

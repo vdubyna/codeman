@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from codeman.application.ports.run_provenance_store_port import RunProvenanceStorePort
+from codeman.config.configuration_reuse import build_configuration_reuse_lineage
 from codeman.config.models import AppConfig
 from codeman.config.provenance import (
     build_effective_config_provenance_id,
@@ -14,6 +15,7 @@ from codeman.config.provenance import (
 )
 from codeman.contracts.configuration import (
     RecordRunConfigurationProvenanceRequest,
+    RetrievalStrategyProfileRecord,
     RunConfigurationProvenanceRecord,
 )
 
@@ -24,6 +26,7 @@ class RecordRunConfigurationProvenanceUseCase:
 
     config: AppConfig
     provenance_store: RunProvenanceStorePort
+    selected_profile: RetrievalStrategyProfileRecord | None = None
 
     def execute(
         self,
@@ -33,12 +36,17 @@ class RecordRunConfigurationProvenanceUseCase:
 
         self.provenance_store.initialize()
         effective_config = build_effective_config_provenance_payload(self.config)
+        configuration_id = build_effective_config_provenance_id(effective_config)
         record = RunConfigurationProvenanceRecord(
             run_id=request.run_id or uuid4().hex,
             workflow_type=request.workflow_type,
             repository_id=request.repository_id,
             snapshot_id=request.snapshot_id,
-            configuration_id=build_effective_config_provenance_id(effective_config),
+            configuration_id=configuration_id,
+            configuration_reuse=build_configuration_reuse_lineage(
+                selected_profile=self.selected_profile,
+                effective_config=effective_config,
+            ),
             indexing_config_fingerprint=request.indexing_config_fingerprint,
             semantic_config_fingerprint=request.semantic_config_fingerprint,
             provider_id=request.provider_id,

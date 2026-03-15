@@ -14,8 +14,10 @@ from codeman.cli.common import (
     emit_failure_response,
     emit_json_response,
 )
+from codeman.config.configuration_reuse import build_configuration_reuse_lineage
 from codeman.config.loader import CONFIG_PRECEDENCE, ConfigOverrides, ConfigurationResolutionError
 from codeman.config.paths import resolve_project_pyproject_path, resolve_user_config_path
+from codeman.config.provenance import build_effective_config_provenance_payload
 from codeman.config.retrieval_profiles import normalize_retrieval_profile_selector
 from codeman.contracts.common import SuccessEnvelope
 from codeman.contracts.configuration import (
@@ -197,6 +199,9 @@ def _render_run_provenance_text(result: ShowRunConfigurationProvenanceResult) ->
         f"Workflow: {provenance.workflow_type}",
         f"Repository ID: {provenance.repository_id}",
         f"Snapshot ID: {_render_value(provenance.snapshot_id)}",
+        f"Reuse Kind: {provenance.configuration_reuse.reuse_kind}",
+        f"Base Profile ID: {_render_value(provenance.configuration_reuse.base_profile_id)}",
+        f"Base Profile Name: {_render_value(provenance.configuration_reuse.base_profile_name)}",
         f"Configuration ID: {provenance.configuration_id}",
         (f"Indexing Config Fingerprint: {_render_value(provenance.indexing_config_fingerprint)}"),
         (f"Semantic Config Fingerprint: {_render_value(provenance.semantic_config_fingerprint)}"),
@@ -234,6 +239,10 @@ def show_config(
         env=os.environ,
     )
     payload = container.config.to_operator_payload()
+    configuration_reuse = build_configuration_reuse_lineage(
+        selected_profile=container.selected_profile,
+        effective_config=build_effective_config_provenance_payload(container.config),
+    )
     payload["metadata"] = {
         "precedence": list(CONFIG_PRECEDENCE),
         "project_defaults_path": str(project_defaults_path),
@@ -243,6 +252,7 @@ def show_config(
             selector=bootstrap_state.config_overrides.profile,
             profile=container.selected_profile,
         ),
+        "configuration_reuse": configuration_reuse.model_dump(mode="json"),
     }
 
     envelope = SuccessEnvelope(
@@ -258,6 +268,7 @@ def show_config(
     semantic = payload["semantic_indexing"]
     embedding_providers = payload["embedding_providers"]
     selected_profile = payload["metadata"]["selected_profile"]
+    configuration_reuse = payload["metadata"]["configuration_reuse"]
     selected_profile_line = "Selected profile: none"
     if selected_profile is not None:
         selected_profile_line = (
@@ -266,6 +277,13 @@ def show_config(
     lines = [
         "Configuration source precedence: " + " -> ".join(payload["metadata"]["precedence"]),
         selected_profile_line,
+        f"Configuration reuse: {configuration_reuse['reuse_kind']}",
+        f"Base profile id: {_render_value(configuration_reuse['base_profile_id'])}",
+        f"Base profile name: {_render_value(configuration_reuse['base_profile_name'])}",
+        (
+            "Effective configuration id: "
+            f"{configuration_reuse['effective_configuration_id']}"
+        ),
         f"Project defaults file: {payload['metadata']['project_defaults_path']}",
         f"Local config file: {payload['metadata']['local_config_path']}",
         (

@@ -19,6 +19,7 @@ from codeman.application.query.format_results import (
     ResolvedLexicalMatch,
     RetrievalResultFormatter,
 )
+from codeman.config.indexing import IndexingConfig, build_indexing_fingerprint
 from codeman.contracts.configuration import (
     RecordRunConfigurationProvenanceRequest,
     RunProvenanceWorkflowContext,
@@ -108,6 +109,7 @@ class RunLexicalQueryUseCase:
     artifact_store: ArtifactStorePort
     lexical_query: LexicalQueryPort
     formatter: RetrievalResultFormatter
+    indexing_config: IndexingConfig
     record_run_provenance: RecordRunConfigurationProvenanceUseCase | None = None
 
     def execute(self, request: RunLexicalQueryRequest) -> RunLexicalQueryResult:
@@ -127,10 +129,11 @@ class RunLexicalQueryUseCase:
 
         build = self.index_build_store.get_latest_build_for_repository(
             repository.repository_id,
+            build_indexing_fingerprint(self.indexing_config),
         )
         if build is None:
             raise LexicalBuildBaselineMissingError(
-                "No lexical baseline exists yet for this repository; "
+                "No lexical baseline exists yet for this repository and current configuration; "
                 "run `codeman index build-lexical <snapshot-id>` first.",
             )
         if not build.index_path.exists():

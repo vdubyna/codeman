@@ -78,6 +78,9 @@ def test_config_show_renders_json_output(tmp_path: Path) -> None:
     assert payload["data"]["semantic_indexing"]["local_model_path"] is None
     assert payload["data"]["embedding_providers"]["local_hash"]["model_id"] == "hash-embedding"
     assert payload["data"]["embedding_providers"]["local_hash"]["api_key_configured"] is False
+    assert payload["data"]["metadata"]["configuration_reuse"]["reuse_kind"] == "ad_hoc"
+    assert payload["data"]["metadata"]["configuration_reuse"]["base_profile_id"] is None
+    assert payload["data"]["metadata"]["configuration_reuse"]["effective_configuration_id"]
 
 
 def test_config_show_redacts_provider_secrets_in_json_output(tmp_path: Path) -> None:
@@ -205,10 +208,74 @@ def test_config_profile_commands_support_save_list_show_and_selected_profile(
         selected_show_payload["data"]["metadata"]["selected_profile"]["selector"]
         == "fixture-profile"
     )
+    assert (
+        selected_show_payload["data"]["metadata"]["configuration_reuse"]["reuse_kind"]
+        == "profile_reuse"
+    )
+    assert (
+        selected_show_payload["data"]["metadata"]["configuration_reuse"]["base_profile_id"]
+        == selected_show_payload["data"]["metadata"]["selected_profile"]["profile_id"]
+    )
     assert selected_show_payload["data"]["semantic_indexing"]["model_id"] == "fixture-local"
     assert (
         selected_show_payload["data"]["embedding_providers"]["local_hash"]["api_key_configured"]
         is False
+    )
+
+
+def test_config_show_marks_selected_profile_overrides_as_modified_reuse(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    local_model_path = tmp_path / "local-model"
+    local_model_path.mkdir()
+    env = {
+        "CODEMAN_SEMANTIC_PROVIDER_ID": "local-hash",
+        "CODEMAN_SEMANTIC_LOCAL_MODEL_PATH": str(local_model_path),
+        "CODEMAN_SEMANTIC_MODEL_ID": "fixture-local",
+        "CODEMAN_SEMANTIC_MODEL_VERSION": "2026-03-14",
+    }
+
+    save_result = runner.invoke(
+        app,
+        [
+            "--workspace-root",
+            str(workspace),
+            "config",
+            "profile",
+            "save",
+            "fixture-profile",
+        ],
+        env=env,
+    )
+    modified_show_result = runner.invoke(
+        app,
+        [
+            "--workspace-root",
+            str(workspace),
+            "--profile",
+            "fixture-profile",
+            "config",
+            "show",
+            "--output-format",
+            "json",
+        ],
+        env={**env, "CODEMAN_INDEXING_FINGERPRINT_SALT": "profile-v2"},
+    )
+
+    payload = json.loads(modified_show_result.stdout)
+
+    assert save_result.exit_code == 0, save_result.stdout
+    assert modified_show_result.exit_code == 0, modified_show_result.stdout
+    assert payload["data"]["metadata"]["configuration_reuse"]["reuse_kind"] == (
+        "modified_profile_reuse"
+    )
+    assert (
+        payload["data"]["metadata"]["configuration_reuse"]["base_profile_name"]
+        == "fixture-profile"
+    )
+    assert (
+        payload["data"]["metadata"]["configuration_reuse"]["effective_configuration_id"]
+        != payload["data"]["metadata"]["selected_profile"]["profile_id"]
     )
 
 
@@ -338,6 +405,7 @@ def test_config_provenance_show_renders_json_output(tmp_path: Path) -> None:
     assert payload["meta"]["command"] == "config.provenance.show"
     assert payload["data"]["provenance"]["run_id"] == "run-123"
     assert payload["data"]["provenance"]["configuration_id"] == "config-123"
+    assert payload["data"]["provenance"]["configuration_reuse"]["reuse_kind"] == "ad_hoc"
     assert payload["data"]["provenance"]["workflow_context"]["semantic_build_id"] == (
         "semantic-build-123"
     )

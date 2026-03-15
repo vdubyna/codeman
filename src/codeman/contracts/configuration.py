@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from codeman.config.retrieval_profiles import (
     RetrievalStrategyProfilePayload,
@@ -91,6 +91,7 @@ class ShowRetrievalStrategyProfileResult(BaseModel):
 
 
 ComparedRetrievalMode = Literal["lexical", "semantic", "hybrid"]
+ConfigurationReuseKind = Literal["ad_hoc", "profile_reuse", "modified_profile_reuse"]
 RunProvenanceWorkflowType = Literal[
     "index.build-chunks",
     "index.build-lexical",
@@ -101,6 +102,17 @@ RunProvenanceWorkflowType = Literal[
     "query.hybrid",
     "compare.query_modes",
 ]
+
+
+class ConfigurationReuseLineage(BaseModel):
+    """Machine-readable selected-profile lineage for the effective configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reuse_kind: ConfigurationReuseKind
+    effective_configuration_id: str
+    base_profile_id: str | None = None
+    base_profile_name: str | None = None
 
 
 class RunProvenanceWorkflowContext(BaseModel):
@@ -129,6 +141,7 @@ class RunConfigurationProvenanceRecord(BaseModel):
     repository_id: str
     snapshot_id: str | None = None
     configuration_id: str
+    configuration_reuse: ConfigurationReuseLineage | None = None
     indexing_config_fingerprint: str | None = None
     semantic_config_fingerprint: str | None = None
     provider_id: str | None = None
@@ -139,6 +152,22 @@ class RunConfigurationProvenanceRecord(BaseModel):
         default_factory=RunProvenanceWorkflowContext
     )
     created_at: datetime
+
+    @model_validator(mode="after")
+    def _ensure_configuration_reuse(self) -> RunConfigurationProvenanceRecord:
+        if self.configuration_reuse is None:
+            self.configuration_reuse = ConfigurationReuseLineage(
+                reuse_kind="ad_hoc",
+                effective_configuration_id=self.configuration_id,
+            )
+            return self
+
+        if self.configuration_reuse.effective_configuration_id != self.configuration_id:
+            raise ValueError(
+                "Configuration reuse lineage must reference the effective configuration id."
+            )
+
+        return self
 
 
 class RecordRunConfigurationProvenanceRequest(BaseModel):

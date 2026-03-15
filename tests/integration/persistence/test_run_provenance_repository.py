@@ -90,6 +90,8 @@ def test_sqlite_run_provenance_store_round_trips_and_orders_repository_records(
 
     assert loaded is not None
     assert loaded.run_id == "run-001"
+    assert loaded.configuration_reuse.reuse_kind == "ad_hoc"
+    assert loaded.configuration_reuse.effective_configuration_id == loaded.configuration_id
     assert [record.run_id for record in listed] == ["run-002", "run-001"]
 
 
@@ -114,7 +116,7 @@ def test_sqlite_run_provenance_store_persists_secret_safe_payloads_only(
     with sqlite3.connect(database_path) as connection:
         row = connection.execute(
             (
-                "select effective_config_json, workflow_context_json "
+                "select effective_config_json, workflow_context_json, reuse_kind "
                 "from run_provenance_records where id = ?"
             ),
             (record.run_id,),
@@ -124,3 +126,4 @@ def test_sqlite_run_provenance_store_persists_secret_safe_payloads_only(
     assert "api_key" not in row[0]
     assert "super-secret" not in row[0]
     assert "semantic-build-123" in row[1]
+    assert row[2] == "ad_hoc"

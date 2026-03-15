@@ -4,7 +4,11 @@ import shutil
 import sqlite3
 from pathlib import Path
 
+import pytest
+
+from codeman.application.indexing.build_lexical_index import ChunkBaselineMissingError
 from codeman.bootstrap import bootstrap
+from codeman.config.indexing import IndexingConfig, build_indexing_fingerprint
 from codeman.contracts.chunking import BuildChunksRequest
 from codeman.contracts.reindexing import ReindexRepositoryRequest
 from codeman.contracts.repository import (
@@ -118,12 +122,14 @@ def test_build_lexical_index_after_reindex_creates_new_snapshot_scoped_artifact(
     )
     stale_lookup = container.index_build_store.get_latest_build_for_repository(
         repository_id,
+        build_indexing_fingerprint(IndexingConfig()),
     )
     refreshed_build = container.build_lexical_index.execute(
         BuildLexicalIndexRequest(snapshot_id=reindex_result.result_snapshot_id),
     )
     latest_lookup = container.index_build_store.get_latest_build_for_repository(
         repository_id,
+        build_indexing_fingerprint(IndexingConfig()),
     )
 
     metadata_database_path = workspace / ".codeman" / "metadata.sqlite3"
@@ -151,3 +157,59 @@ def test_build_lexical_index_after_reindex_creates_new_snapshot_scoped_artifact(
         (baseline_build.build.snapshot_id, str(baseline_build.build.index_path)),
         (refreshed_build.build.snapshot_id, str(refreshed_build.build.index_path)),
     ]
+
+
+def test_lexical_build_lookup_is_keyed_to_the_current_indexing_fingerprint(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    shutil.copytree(FIXTURE_REPOSITORY, repository_path)
+
+    container, repository_id, snapshot_id = prepare_indexed_repository(
+        workspace=workspace,
+        repository_path=repository_path,
+    )
+    baseline_build = container.build_lexical_index.execute(
+        BuildLexicalIndexRequest(snapshot_id=snapshot_id),
+    )
+
+    matched_lookup = container.index_build_store.get_latest_build_for_repository(
+        repository_id,
+        baseline_build.build.indexing_config_fingerprint,
+    )
+    mismatched_lookup = container.index_build_store.get_latest_build_for_repository(
+        repository_id,
+        build_indexing_fingerprint(IndexingConfig(fingerprint_salt="profile-v2")),
+    )
+
+    assert matched_lookup is not None
+    assert matched_lookup.build_id == baseline_build.build.build_id
+    assert mismatched_lookup is None
+
+
+def test_build_lexical_index_requires_chunks_for_the_current_indexing_configuration(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    shutil.copytree(FIXTURE_REPOSITORY, repository_path)
+
+    container, _, snapshot_id = prepare_indexed_repository(
+        workspace=workspace,
+        repository_path=repository_path,
+    )
+    mismatched_container = bootstrap(
+        workspace_root=workspace,
+        environ={"CODEMAN_INDEXING_FINGERPRINT_SALT": "profile-v2"},
+    )
+
+    with pytest.raises(ChunkBaselineMissingError) as exc_info:
+        mismatched_container.build_lexical_index.execute(
+            BuildLexicalIndexRequest(snapshot_id=snapshot_id),
+        )
+
+    assert container.snapshot_store.get_by_snapshot_id(snapshot_id) is not None
+    assert "current configuration" in exc_info.value.message

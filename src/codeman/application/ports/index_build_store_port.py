@@ -25,5 +25,6 @@ class IndexBuildStorePort(Protocol):
     def get_latest_build_for_repository(
         self,
         repository_id: str,
+        indexing_config_fingerprint: str,
     ) -> LexicalIndexBuildRecord | None:
-        """Return the latest lexical build for the repository's current snapshot."""
+        """Return the latest lexical build for the repository's current snapshot/config pair."""

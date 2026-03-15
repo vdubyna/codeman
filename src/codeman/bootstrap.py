@@ -255,6 +255,7 @@ def bootstrap(
     record_run_provenance = RecordRunConfigurationProvenanceUseCase(
         config=config,
         provenance_store=run_provenance_store,
+        selected_profile=selected_profile,
     )
     show_run_provenance = ShowRunConfigurationProvenanceUseCase(
         provenance_store=run_provenance_store,
@@ -313,6 +314,7 @@ def bootstrap(
         artifact_store=artifact_store,
         lexical_query=SqliteFts5LexicalQueryEngine(),
         formatter=RetrievalResultFormatter(),
+        indexing_config=config.indexing,
         record_run_provenance=record_run_provenance,
     )
     run_semantic_query = RunSemanticQueryUseCase(

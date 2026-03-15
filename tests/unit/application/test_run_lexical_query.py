@@ -16,6 +16,7 @@ from codeman.application.query.run_lexical_query import (
     LexicalQueryRepositoryNotRegisteredError,
     RunLexicalQueryUseCase,
 )
+from codeman.config.indexing import IndexingConfig, build_indexing_fingerprint
 from codeman.contracts.chunking import ChunkPayloadDocument, ChunkRecord
 from codeman.contracts.repository import RepositoryRecord, SnapshotRecord
 from codeman.contracts.retrieval import (
@@ -79,8 +80,13 @@ class FakeIndexBuildStore:
     def get_latest_build_for_repository(
         self,
         repository_id: str,
+        indexing_config_fingerprint: str,
     ) -> LexicalIndexBuildRecord | None:
-        if self.build is None or self.build.repository_id != repository_id:
+        if (
+            self.build is None
+            or self.build.repository_id != repository_id
+            or self.build.indexing_config_fingerprint != indexing_config_fingerprint
+        ):
             return None
         return self.build
 
@@ -154,7 +160,7 @@ def build_snapshot_record(repository_id: str, workspace: Path) -> SnapshotRecord
         created_at=now,
         source_inventory_extracted_at=now,
         chunk_generation_completed_at=now,
-        indexing_config_fingerprint="fingerprint-123",
+        indexing_config_fingerprint=build_indexing_fingerprint(IndexingConfig()),
     )
 
 
@@ -165,7 +171,7 @@ def build_index_record(workspace: Path, repository_id: str) -> LexicalIndexBuild
         snapshot_id="snapshot-123",
         revision_identity="revision-abc",
         revision_source="filesystem_fingerprint",
-        indexing_config_fingerprint="fingerprint-123",
+        indexing_config_fingerprint=build_indexing_fingerprint(IndexingConfig()),
         lexical_engine="sqlite-fts5",
         tokenizer_spec="unicode61 remove_diacritics 0 tokenchars '_'",
         indexed_fields=["content", "relative_path"],
@@ -301,6 +307,7 @@ def test_run_lexical_query_returns_ranked_matches_with_repository_context(
         artifact_store=FakeArtifactStore(payloads=build_payloads(chunks)),
         lexical_query=FakeLexicalQueryEngine(result=query_result),
         formatter=RetrievalResultFormatter(preview_char_limit=80),
+        indexing_config=IndexingConfig(),
     )
 
     result = use_case.execute(
@@ -338,6 +345,7 @@ def test_run_lexical_query_raises_when_repository_is_unknown(tmp_path: Path) -> 
         artifact_store=FakeArtifactStore(payloads={}),
         lexical_query=FakeLexicalQueryEngine(result=build_query_result()),
         formatter=RetrievalResultFormatter(),
+        indexing_config=IndexingConfig(),
     )
 
     with pytest.raises(LexicalQueryRepositoryNotRegisteredError):
@@ -367,6 +375,7 @@ def test_run_lexical_query_raises_when_current_lexical_build_is_missing(
         artifact_store=FakeArtifactStore(payloads={}),
         lexical_query=FakeLexicalQueryEngine(result=build_query_result()),
         formatter=RetrievalResultFormatter(),
+        indexing_config=IndexingConfig(),
     )
 
     with pytest.raises(LexicalBuildBaselineMissingError):
@@ -397,6 +406,7 @@ def test_run_lexical_query_propagates_missing_artifact_failure(tmp_path: Path) -
         artifact_store=FakeArtifactStore(payloads=build_payloads(chunks)),
         lexical_query=FakeLexicalQueryEngine(result=build_query_result()),
         formatter=RetrievalResultFormatter(),
+        indexing_config=IndexingConfig(),
     )
 
     with pytest.raises(LexicalArtifactMissingError):
@@ -429,6 +439,7 @@ def test_run_lexical_query_wraps_unexpected_adapter_failures(tmp_path: Path) -> 
         artifact_store=FakeArtifactStore(payloads=build_payloads(chunks)),
         lexical_query=FakeLexicalQueryEngine(error=RuntimeError("sqlite exploded")),
         formatter=RetrievalResultFormatter(),
+        indexing_config=IndexingConfig(),
     )
 
     with pytest.raises(LexicalQueryError):
@@ -463,6 +474,7 @@ def test_run_lexical_query_raises_when_ranked_chunk_metadata_is_missing(
         artifact_store=FakeArtifactStore(payloads=build_payloads(chunks)),
         lexical_query=FakeLexicalQueryEngine(result=build_query_result()),
         formatter=RetrievalResultFormatter(),
+        indexing_config=IndexingConfig(),
     )
 
     with pytest.raises(LexicalQueryChunkMetadataMissingError):
@@ -499,6 +511,7 @@ def test_run_lexical_query_raises_when_chunk_payload_is_missing(
         artifact_store=FakeArtifactStore(payloads=payloads),
         lexical_query=FakeLexicalQueryEngine(result=build_query_result()),
         formatter=RetrievalResultFormatter(),
+        indexing_config=IndexingConfig(),
     )
 
     with pytest.raises(LexicalQueryChunkPayloadMissingError):
@@ -508,3 +521,42 @@ def test_run_lexical_query_raises_when_chunk_payload_is_missing(
                 query_text="bootValue",
             ),
         )
+
+
+def test_run_lexical_query_raises_when_only_an_unmatched_config_build_exists(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    repository_path.mkdir()
+    runtime_paths = build_runtime_paths(workspace)
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(repository.repository_id, workspace)
+    build = build_index_record(workspace, repository.repository_id).model_copy(
+        update={"indexing_config_fingerprint": "different-fingerprint"}
+    )
+    build.index_path.parent.mkdir(parents=True, exist_ok=True)
+    build.index_path.touch()
+    chunks = build_chunk_records(workspace)
+    use_case = RunLexicalQueryUseCase(
+        runtime_paths=runtime_paths,
+        repository_store=FakeRepositoryStore(repository=repository),
+        snapshot_store=FakeSnapshotStore(snapshot=snapshot),
+        index_build_store=FakeIndexBuildStore(build=build),
+        chunk_store=FakeChunkStore(chunks=chunks),
+        artifact_store=FakeArtifactStore(payloads=build_payloads(chunks)),
+        lexical_query=FakeLexicalQueryEngine(result=build_query_result()),
+        formatter=RetrievalResultFormatter(),
+        indexing_config=IndexingConfig(fingerprint_salt="123"),
+    )
+
+    with pytest.raises(LexicalBuildBaselineMissingError) as exc_info:
+        use_case.execute(
+            RunLexicalQueryRequest(
+                repository_id=repository.repository_id,
+                query_text="bootValue",
+            ),
+        )
+
+    assert "current configuration" in exc_info.value.message

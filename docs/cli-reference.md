@@ -35,6 +35,11 @@ uv run codeman index build-lexical <snapshot-id>
 uv run codeman index build-lexical <snapshot-id> --output-format json
 ```
 
+`index build-lexical` reuses the chunk baseline already stored on the snapshot. If the current
+effective indexing configuration no longer matches the chunk-generation fingerprint, the command
+fails with a stable baseline-missing error and asks you to rerun `index build-chunks` for the
+current configuration instead of attributing the lexical build to overrides that never executed.
+
 ```bash
 uv run codeman index build-semantic <snapshot-id>
 uv run codeman index build-semantic <snapshot-id> --output-format json
@@ -131,8 +136,12 @@ uv run codeman query lexical <repository-id> "HomeController" --output-format js
 uv run codeman query lexical <repository-id> --query="--output-format" --output-format json
 ```
 
-`query lexical` returns a shared agent-friendly retrieval package for the current repository-scoped lexical build.
+`query lexical` returns a shared agent-friendly retrieval package for the current repository-scoped lexical build that matches the current effective indexing configuration.
 By default, the package is intentionally capped to the top 20 ranked hits so broad queries stay compact and agent-usable.
+
+If no lexical build exists for the latest eligible snapshot and current effective indexing
+configuration, `query lexical` fails with a stable baseline-missing error instead of silently
+reusing an older or differently configured lexical baseline.
 
 Text output includes:
 - Retrieval mode plus repository, snapshot, build, query, and latency metadata.
@@ -238,6 +247,8 @@ uv run codeman --config-path /path/to/config.toml --workspace-root /tmp/workspac
 Text output includes:
 - Source precedence and the resolved project/defaults and local-config paths.
 - The currently selected retrieval profile, when `--profile` is supplied.
+- Explicit reuse metadata showing whether the invocation is `ad_hoc`, an exact `profile_reuse`, or a `modified_profile_reuse`.
+- The selected base profile identity, when applicable, plus the effective `configuration_id` for the current invocation.
 - Effective runtime values such as workspace root, runtime root directory, and metadata database name.
 - Effective indexing and semantic-indexing settings, plus secret-safe provider-owned settings under `embedding_providers`.
 - Secret-bearing provider fields are omitted from text and JSON output; instead, `config show` reports whether a field such as `api_key` is configured.
@@ -249,7 +260,17 @@ JSON output keeps the standard success envelope on `stdout` and returns:
 - `indexing`
 - `semantic_indexing` including additive compatibility fields `model_id`, `model_version`, and `local_model_path`
 - `embedding_providers`
-- `metadata`
+- `metadata`, including `selected_profile` and additive `configuration_reuse` lineage metadata
+
+When a selected profile is reused unchanged, `metadata.configuration_reuse.reuse_kind` is
+`profile_reuse` and its `base_profile_id` matches the effective `configuration_id`. When CLI or
+environment overrides change that selected profile for the current invocation, the same metadata
+reports `modified_profile_reuse` while preserving the original base profile identity.
+
+`config provenance show <run-id>` exposes the same reuse-lineage semantics for persisted successful
+runs. Text and JSON output distinguish the effective `configuration_id` that actually executed from
+the optional base profile identity (`base_profile_id`, `base_profile_name`) and the explicit
+`reuse_kind`.
 
 Invalid or conflicting configuration fails before the underlying workflow starts. That includes
 malformed `[tool.codeman]` defaults in `pyproject.toml`, malformed local TOML config, missing
@@ -305,6 +326,7 @@ Successful indexing and retrieval workflows persist a secret-safe provenance rec
 - `repository_id`
 - `snapshot_id` when the workflow has one
 - a stable `configuration_id` derived from canonical effective retrieval config JSON
+- explicit reuse lineage: `reuse_kind`, optional `base_profile_id`, and optional `base_profile_name`
 - workflow-specific fingerprints such as `indexing_config_fingerprint` and `semantic_config_fingerprint`
 - non-secret provider/model metadata when relevant
 - secret-safe `effective_config`
@@ -409,8 +431,9 @@ uv run codeman query hybrid <repository-id> --query="--query" --output-format js
 `query hybrid` composes the current repository-scoped lexical and semantic query paths, requests a larger
 internal candidate window for fusion, and then returns the standard top-20 retrieval package after
 deterministic Reciprocal Rank Fusion (RRF).
-If either component baseline is unavailable for the latest repository snapshot and current semantic configuration,
-the command fails with `hybrid_component_baseline_missing` instead of pretending it ran full hybrid fusion.
+If either component baseline is unavailable for the latest repository snapshot and current effective
+configuration, the command fails with `hybrid_component_baseline_missing` instead of pretending it
+ran full hybrid fusion.
 If the lexical and semantic component paths resolve different repository snapshots, the command fails with
 `hybrid_snapshot_mismatch` instead of fusing mixed-state evidence.
 
@@ -529,8 +552,8 @@ uv run codeman compare query-modes <repository-id> --query="--query" --output-fo
 for the same repository query, then returns a single attributable comparison package.
 The command is still local-first and artifact-only: it reuses the current persisted lexical and semantic
 baselines for the repository instead of rescanning source files or rereading mutated working-tree content.
-If either required component baseline is unavailable, the command fails with
-`compare_retrieval_mode_baseline_missing`.
+If either required component baseline is unavailable for the latest repository snapshot and current
+effective configuration, the command fails with `compare_retrieval_mode_baseline_missing`.
 If one compared mode is unavailable because of artifact corruption, provider initialization failure, or
 another underlying retrieval-path problem, the command fails with `compare_retrieval_mode_unavailable`.
 If lexical and semantic comparison inputs resolve different repository snapshots, the command fails with
