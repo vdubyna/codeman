@@ -52,6 +52,11 @@ def create_app() -> typer.Typer:
             "--config-path",
             help="Use an explicit local config TOML file for this invocation.",
         ),
+        profile: str | None = typer.Option(
+            None,
+            "--profile",
+            help="Apply a saved retrieval strategy profile before CLI/environment overrides.",
+        ),
         workspace_root: Path | None = typer.Option(
             None,
             "--workspace-root",
@@ -76,6 +81,7 @@ def create_app() -> typer.Typer:
         ctx.obj = CliBootstrapState(
             config_overrides=ConfigOverrides(
                 config_path=config_path.resolve() if config_path is not None else None,
+                profile=profile,
                 workspace_root=workspace_root.resolve() if workspace_root is not None else None,
                 runtime_root_dir=runtime_root_dir,
                 metadata_database_name=metadata_database_name,

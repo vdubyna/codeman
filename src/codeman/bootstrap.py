@@ -6,6 +6,18 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Mapping
 
+from codeman.application.config.list_retrieval_strategy_profiles import (
+    ListRetrievalStrategyProfilesUseCase,
+)
+from codeman.application.config.retrieval_profile_selection import (
+    resolve_retrieval_strategy_profile_selector,
+)
+from codeman.application.config.save_retrieval_strategy_profile import (
+    SaveRetrievalStrategyProfileUseCase,
+)
+from codeman.application.config.show_retrieval_strategy_profile import (
+    ShowRetrievalStrategyProfileUseCase,
+)
 from codeman.application.indexing.build_chunks import BuildChunksUseCase
 from codeman.application.indexing.build_embeddings import BuildEmbeddingsStage
 from codeman.application.indexing.build_lexical_index import BuildLexicalIndexUseCase
@@ -20,8 +32,10 @@ from codeman.application.query.run_semantic_query import RunSemanticQueryUseCase
 from codeman.application.repo.create_snapshot import CreateSnapshotUseCase
 from codeman.application.repo.register_repository import RegisterRepositoryUseCase
 from codeman.application.repo.reindex_repository import ReindexRepositoryUseCase
-from codeman.config.loader import ConfigOverrides, load_app_config
+from codeman.config.loader import ConfigOverrides, ConfigurationResolutionError, load_app_config
 from codeman.config.models import AppConfig
+from codeman.config.retrieval_profiles import normalize_retrieval_profile_selector
+from codeman.contracts.configuration import RetrievalStrategyProfileRecord
 from codeman.infrastructure.artifacts.filesystem_artifact_store import (
     FilesystemArtifactStore,
 )
@@ -55,6 +69,9 @@ from codeman.infrastructure.persistence.sqlite.repositories.reindex_run_reposito
 from codeman.infrastructure.persistence.sqlite.repositories.repository_repository import (
     SqliteRepositoryMetadataStore,
 )
+from codeman.infrastructure.persistence.sqlite.repositories.retrieval_profile_repository import (
+    SqliteRetrievalStrategyProfileStore,
+)
 from codeman.infrastructure.persistence.sqlite.repositories.semantic_index_build_repository import (
     SqliteSemanticIndexBuildStore,
 )
@@ -76,6 +93,7 @@ class BootstrapContainer:
     """Minimal container shared by CLI entrypoints and tests."""
 
     config: AppConfig
+    selected_profile: RetrievalStrategyProfileRecord | None
     runtime_paths: RuntimePaths
     metadata_store: SqliteRepositoryMetadataStore
     snapshot_store: SqliteSnapshotMetadataStore
@@ -83,6 +101,7 @@ class BootstrapContainer:
     chunk_store: SqliteChunkStore
     index_build_store: SqliteIndexBuildStore
     semantic_index_build_store: SqliteSemanticIndexBuildStore
+    retrieval_profile_store: SqliteRetrievalStrategyProfileStore
     register_repository: RegisterRepositoryUseCase
     create_snapshot: CreateSnapshotUseCase
     extract_source_files: ExtractSourceFilesUseCase
@@ -94,6 +113,9 @@ class BootstrapContainer:
     run_hybrid_query: RunHybridQueryUseCase
     compare_retrieval_modes: CompareRetrievalModesUseCase
     reindex_repository: ReindexRepositoryUseCase
+    save_retrieval_strategy_profile: SaveRetrievalStrategyProfileUseCase
+    list_retrieval_strategy_profiles: ListRetrievalStrategyProfilesUseCase
+    show_retrieval_strategy_profile: ShowRetrievalStrategyProfileUseCase
 
 
 def bootstrap(
@@ -112,11 +134,46 @@ def bootstrap(
             workspace_root=workspace_root.resolve(),
         )
 
-    config = load_app_config(
-        cli_overrides=resolved_overrides,
-        allow_missing_local_config=allow_missing_local_config,
-        environ=environ,
-    )
+    selected_profile: RetrievalStrategyProfileRecord | None = None
+    if resolved_overrides.profile is not None:
+        try:
+            normalized_profile_selector = normalize_retrieval_profile_selector(
+                resolved_overrides.profile,
+                field_name="selector",
+            )
+        except ValueError as exc:
+            raise ConfigurationResolutionError(str(exc)) from exc
+
+        base_config = load_app_config(
+            cli_overrides=replace(resolved_overrides, profile=None),
+            allow_missing_local_config=allow_missing_local_config,
+            environ=environ,
+        )
+        base_runtime_paths = build_runtime_paths(
+            workspace_root=base_config.runtime.workspace_root,
+            root_dir_name=base_config.runtime.root_dir_name,
+            metadata_database_name=base_config.runtime.metadata_database_name,
+        )
+        selection_store = SqliteRetrievalStrategyProfileStore(
+            engine=create_sqlite_engine(base_runtime_paths.metadata_database_path),
+            database_path=base_runtime_paths.metadata_database_path,
+        )
+        selected_profile = resolve_retrieval_strategy_profile_selector(
+            selection_store,
+            normalized_profile_selector,
+        )
+        config = load_app_config(
+            cli_overrides=replace(resolved_overrides, profile=normalized_profile_selector),
+            selected_profile_payload=selected_profile.payload.to_loader_payload(),
+            allow_missing_local_config=allow_missing_local_config,
+            environ=environ,
+        )
+    else:
+        config = load_app_config(
+            cli_overrides=resolved_overrides,
+            allow_missing_local_config=allow_missing_local_config,
+            environ=environ,
+        )
 
     selected_workspace = config.runtime.workspace_root
     runtime_paths = build_runtime_paths(
@@ -146,6 +203,10 @@ def bootstrap(
         database_path=runtime_paths.metadata_database_path,
     )
     semantic_index_build_store = SqliteSemanticIndexBuildStore(
+        engine=snapshot_engine,
+        database_path=runtime_paths.metadata_database_path,
+    )
+    retrieval_profile_store = SqliteRetrievalStrategyProfileStore(
         engine=snapshot_engine,
         database_path=runtime_paths.metadata_database_path,
     )
@@ -266,8 +327,19 @@ def bootstrap(
         artifact_store=artifact_store,
         indexing_config=config.indexing,
     )
+    save_retrieval_strategy_profile = SaveRetrievalStrategyProfileUseCase(
+        config=config,
+        profile_store=retrieval_profile_store,
+    )
+    list_retrieval_strategy_profiles = ListRetrievalStrategyProfilesUseCase(
+        profile_store=retrieval_profile_store,
+    )
+    show_retrieval_strategy_profile = ShowRetrievalStrategyProfileUseCase(
+        profile_store=retrieval_profile_store,
+    )
     return BootstrapContainer(
         config=config,
+        selected_profile=selected_profile,
         runtime_paths=runtime_paths,
         metadata_store=metadata_store,
         snapshot_store=snapshot_store,
@@ -275,6 +347,7 @@ def bootstrap(
         chunk_store=chunk_store,
         index_build_store=index_build_store,
         semantic_index_build_store=semantic_index_build_store,
+        retrieval_profile_store=retrieval_profile_store,
         register_repository=register_repository,
         create_snapshot=create_snapshot,
         extract_source_files=extract_source_files,
@@ -286,4 +359,7 @@ def bootstrap(
         run_hybrid_query=run_hybrid_query,
         compare_retrieval_modes=compare_retrieval_modes,
         reindex_repository=reindex_repository,
+        save_retrieval_strategy_profile=save_retrieval_strategy_profile,
+        list_retrieval_strategy_profiles=list_retrieval_strategy_profiles,
+        show_retrieval_strategy_profile=show_retrieval_strategy_profile,
     )

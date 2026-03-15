@@ -19,6 +19,7 @@ from codeman.contracts.errors import ErrorCode
 CONFIG_PRECEDENCE = (
     "project_defaults",
     "local_config",
+    "selected_profile",
     "cli_overrides",
     "environment",
 )
@@ -59,6 +60,7 @@ class ConfigOverrides:
     """CLI-supplied configuration overrides for the current invocation."""
 
     config_path: Path | None = None
+    profile: str | None = None
     workspace_root: Path | None = None
     runtime_root_dir: str | None = None
     metadata_database_name: str | None = None
@@ -297,6 +299,7 @@ def load_app_config(
     *,
     pyproject_path: Path | None = None,
     config_path: Path | None = None,
+    selected_profile_payload: Mapping[str, Any] | None = None,
     cli_overrides: ConfigOverrides | None = None,
     allow_missing_local_config: bool = True,
     environ: Mapping[str, str] | None = None,
@@ -344,6 +347,12 @@ def load_app_config(
         raise ConfigurationResolutionError(
             f"Configuration file does not exist: {resolved_local_config.path}",
             details={"path": str(resolved_local_config.path)},
+        )
+
+    if selected_profile_payload is not None:
+        merged_payload = _merge_nested_dicts(
+            merged_payload,
+            _migrate_legacy_semantic_provider_fields(dict(selected_profile_payload)),
         )
 
     merged_payload = _merge_nested_dicts(

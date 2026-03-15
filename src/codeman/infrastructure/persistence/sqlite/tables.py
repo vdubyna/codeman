@@ -10,6 +10,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     UniqueConstraint,
 )
 
@@ -143,4 +144,19 @@ semantic_index_builds_table = Table(
     Column("embedding_dimension", Integer(), nullable=False),
     Column("artifact_path", String(length=2048), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+retrieval_strategy_profiles_table = Table(
+    "retrieval_strategy_profiles",
+    metadata,
+    Column("name", String(length=255), primary_key=True),
+    Column("profile_id", String(length=64), nullable=False),
+    Column("payload_json", Text(), nullable=False),
+    Column("provider_id", String(length=128), nullable=True),
+    Column("model_id", String(length=255), nullable=True),
+    Column("model_version", String(length=255), nullable=True),
+    Column("vector_engine", String(length=64), nullable=False),
+    Column("vector_dimension", Integer(), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("name", name="uq_retrieval_strategy_profiles_name"),
 )

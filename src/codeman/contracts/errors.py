@@ -69,4 +69,7 @@ class ErrorCode:
     COMPARE_RETRIEVAL_MODES_FAILED = "compare_retrieval_modes_failed"
     REINDEX_FAILED = "reindex_failed"
     CONFIGURATION_INVALID = "configuration_invalid"
+    CONFIGURATION_PROFILE_NOT_FOUND = "configuration_profile_not_found"
+    CONFIGURATION_PROFILE_NAME_CONFLICT = "configuration_profile_name_conflict"
+    CONFIGURATION_PROFILE_AMBIGUOUS = "configuration_profile_ambiguous"
     INTERNAL_ERROR = "internal_error"

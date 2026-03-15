@@ -7,6 +7,7 @@ import pytest
 from codeman.config.defaults import IN_CODE_DEFAULTS, load_project_defaults
 from codeman.config.loader import ConfigOverrides, ConfigurationResolutionError, load_app_config
 from codeman.config.paths import resolve_user_config_path
+from codeman.config.retrieval_profiles import RetrievalStrategyProfilePayload
 
 
 def test_load_project_defaults_uses_in_code_fallback_when_tool_table_missing(
@@ -326,3 +327,83 @@ api_key = "local-secret"
     assert config.embedding_providers.local_hash.model_version == "1"
     assert config.embedding_providers.local_hash.local_model_path is None
     assert config.embedding_providers.local_hash.api_key is None
+
+
+def test_load_app_config_applies_selected_profile_between_local_cli_and_env(
+    tmp_path: Path,
+) -> None:
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_text(
+        """
+[tool.codeman.semantic_indexing]
+provider_id = "local-hash"
+vector_engine = "sqlite-exact"
+vector_dimension = 8
+fingerprint_salt = "project-semantic"
+
+[tool.codeman.embedding_providers.local_hash]
+model_id = "project-model"
+model_version = "project-version"
+local_model_path = "/tmp/project-model"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    local_config_path = tmp_path / "local-config.toml"
+    local_config_path.write_text(
+        """
+[indexing]
+fingerprint_salt = "local-indexing"
+
+[semantic_indexing]
+fingerprint_salt = "local-semantic"
+
+[embedding_providers.local_hash]
+model_id = "local-model"
+model_version = "local-version"
+local_model_path = "/tmp/local-model"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    selected_profile_payload = RetrievalStrategyProfilePayload.model_validate(
+        {
+            "indexing": {"fingerprint_salt": "profile-indexing"},
+            "semantic_indexing": {
+                "provider_id": "local-hash",
+                "vector_engine": "sqlite-exact",
+                "vector_dimension": 24,
+                "fingerprint_salt": "profile-semantic",
+            },
+            "embedding_providers": {
+                "local_hash": {
+                    "model_id": "profile-model",
+                    "model_version": "profile-version",
+                    "local_model_path": "/tmp/profile-model",
+                }
+            },
+        }
+    )
+
+    config = load_app_config(
+        pyproject_path=pyproject_path,
+        config_path=local_config_path,
+        selected_profile_payload=selected_profile_payload.to_loader_payload(),
+        cli_overrides=ConfigOverrides(metadata_database_name="cli.sqlite3"),
+        allow_missing_local_config=False,
+        environ={
+            "CODEMAN_SEMANTIC_MODEL_VERSION": "env-version",
+            "CODEMAN_SEMANTIC_VECTOR_DIMENSION": "32",
+        },
+    )
+
+    assert config.indexing.fingerprint_salt == "profile-indexing"
+    assert config.semantic_indexing.fingerprint_salt == "profile-semantic"
+    assert config.semantic_indexing.vector_dimension == 32
+    assert config.embedding_providers.local_hash.model_id == "profile-model"
+    assert config.embedding_providers.local_hash.model_version == "env-version"
+    assert (
+        config.embedding_providers.local_hash.local_model_path
+        == Path("/tmp/profile-model").resolve()
+    )
+    assert config.runtime.metadata_database_name == "cli.sqlite3"

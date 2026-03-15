@@ -64,6 +64,13 @@ model_version = "local-version"
     assert payload["data"]["semantic_indexing"]["model_version"] == "env-version"
     assert payload["data"]["embedding_providers"]["local_hash"]["model_version"] == "env-version"
     assert payload["data"]["metadata"]["local_config_present"] is True
+    assert payload["data"]["metadata"]["precedence"] == [
+        "project_defaults",
+        "local_config",
+        "selected_profile",
+        "cli_overrides",
+        "environment",
+    ]
 
 
 def test_uv_run_config_show_redacts_provider_secrets(tmp_path: Path) -> None:

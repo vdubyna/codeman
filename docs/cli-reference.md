@@ -191,8 +191,9 @@ All commands resolve configuration with the same deterministic precedence:
 
 1. project defaults from `[tool.codeman]` in `pyproject.toml`
 2. optional user-local TOML config
-3. explicit CLI overrides
-4. environment variables as final overrides
+3. optional selected retrieval profile from `--profile <name-or-id>`
+4. explicit CLI overrides
+5. environment variables as final overrides
 
 The current root-level CLI overrides are intentionally narrow and apply to any command when passed
 before the command group:
@@ -200,10 +201,17 @@ before the command group:
 ```bash
 uv run codeman --config-path /path/to/config.toml --workspace-root /tmp/codeman-workspace config show
 uv run codeman --runtime-root-dir .codeman-dev --metadata-database-name metadata.dev.sqlite3 repo register /path/to/local/repository
+uv run codeman --profile fixture-profile config show
+uv run codeman --profile fixture-profile index build-semantic <snapshot-id>
 ```
 
 `CODEMAN_CONFIG_PATH` is the environment equivalent of `--config-path` and is treated as an explicit
 local-config override for the current invocation.
+
+`--profile <name-or-id>` resolves one saved retrieval-strategy profile from the current workspace
+runtime metadata store before explicit CLI and environment overrides are applied. Profile selection
+is limited to retrieval-related settings only: it does not change workspace root selection, runtime
+database paths, config file lookup, or repository registration behavior.
 
 The default optional user-local config path is `~/.config/codeman/config.toml` on systems without
 `XDG_CONFIG_HOME`, or `$XDG_CONFIG_HOME/codeman/config.toml` when that variable is set. A missing
@@ -220,6 +228,7 @@ uv run codeman --config-path /path/to/config.toml --workspace-root /tmp/workspac
 
 Text output includes:
 - Source precedence and the resolved project/defaults and local-config paths.
+- The currently selected retrieval profile, when `--profile` is supplied.
 - Effective runtime values such as workspace root, runtime root directory, and metadata database name.
 - Effective indexing and semantic-indexing settings, plus secret-safe provider-owned settings under `embedding_providers`.
 - Secret-bearing provider fields are omitted from text and JSON output; instead, `config show` reports whether a field such as `api_key` is configured.
@@ -238,6 +247,41 @@ malformed `[tool.codeman]` defaults in `pyproject.toml`, malformed local TOML co
 explicit config paths, and invalid resolved field values. JSON mode returns a standard failure
 envelope with `error.code = "configuration_invalid"` and exit code `18`; text mode prints the
 validation message on `stderr`.
+
+Saved retrieval-strategy profiles are managed under the nested `config profile` command group:
+
+```bash
+uv run codeman config profile save fixture-profile
+uv run codeman config profile list
+uv run codeman config profile show fixture-profile
+uv run codeman config profile show <profile-id>
+uv run codeman config profile list --output-format json
+```
+
+`config profile save <name>` captures the current retrieval-affecting configuration in a secret-safe
+canonical payload:
+- `semantic_indexing`
+- the selected provider's non-secret `embedding_providers.<provider>` block
+- `indexing` fields that already affect retrieval artifacts or baseline matching
+
+Saved profiles receive a stable `profile_id` derived from canonical sorted JSON content. The human
+readable `name` is stored separately and must be unique. Re-saving the same `name` with identical
+content is idempotent. Re-saving the same `name` with different content fails with
+`configuration_profile_name_conflict` instead of silently overwriting the existing record.
+
+`config profile show <name-or-id>` resolves by exact name or exact stable id. If a selector matches
+multiple saved profiles, the command fails with `configuration_profile_ambiguous` instead of
+guessing. A missing selector fails with `configuration_profile_not_found`.
+
+Profile text and JSON output distinguish profiles by:
+- `name`
+- `profile_id`
+- selected provider and model/version
+- vector engine and vector dimension
+- non-secret salts and local model path values that materially affect retrieval behavior
+
+Secrets such as provider `api_key` values are never written into saved profile payloads, never
+printed in `config profile` output, and never promoted into project defaults.
 
 ```bash
 uv run codeman query semantic <repository-id> "controller home route"

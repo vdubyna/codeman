@@ -1,22 +1,46 @@
-"""Configuration command group placeholder."""
+"""Configuration command group and retrieval-profile management commands."""
 
 from __future__ import annotations
 
+import json
 import os
 
 import typer
+from pydantic import ValidationError
 
-from codeman.cli.common import OutputFormat, build_command_meta, emit_json_response
-from codeman.config.loader import CONFIG_PRECEDENCE, ConfigOverrides
+from codeman.cli.common import (
+    OutputFormat,
+    build_command_meta,
+    emit_failure_response,
+    emit_json_response,
+)
+from codeman.config.loader import CONFIG_PRECEDENCE, ConfigOverrides, ConfigurationResolutionError
 from codeman.config.paths import resolve_project_pyproject_path, resolve_user_config_path
+from codeman.config.retrieval_profiles import normalize_retrieval_profile_selector
 from codeman.contracts.common import SuccessEnvelope
+from codeman.contracts.configuration import (
+    RetrievalStrategyProfileRecord,
+    SaveRetrievalStrategyProfileRequest,
+    SelectedRetrievalStrategyProfile,
+    ShowRetrievalStrategyProfileRequest,
+)
 
 app = typer.Typer(help="Configuration inspection and override commands.", no_args_is_help=True)
+profile_app = typer.Typer(
+    help="Save, list, and inspect reusable retrieval strategy profiles.",
+    no_args_is_help=True,
+)
+app.add_typer(profile_app, name="profile")
 
 
 @app.callback()
 def config_group() -> None:
     """Inspect configuration and runtime defaults."""
+
+
+@profile_app.callback()
+def config_profile_group() -> None:
+    """Manage reusable retrieval strategy profiles."""
 
 
 def _render_value(value: object | None) -> str:
@@ -25,6 +49,122 @@ def _render_value(value: object | None) -> str:
     if value == "":
         return "<empty>"
     return str(value)
+
+
+def _selected_profile_metadata(
+    *,
+    selector: str | None,
+    profile: RetrievalStrategyProfileRecord | None,
+) -> dict[str, str] | None:
+    if profile is None:
+        return None
+
+    resolved_selector = profile.name
+    if selector is not None:
+        try:
+            resolved_selector = normalize_retrieval_profile_selector(
+                selector,
+                field_name="selector",
+            )
+        except ValueError:
+            resolved_selector = profile.name
+
+    selected_profile = SelectedRetrievalStrategyProfile(
+        selector=resolved_selector,
+        name=profile.name,
+        profile_id=profile.profile_id,
+    )
+    return selected_profile.model_dump(mode="json")
+
+
+def _profile_local_model_path(profile: RetrievalStrategyProfileRecord) -> str | None:
+    provider_config = profile.payload.embedding_providers.get_provider_config(profile.provider_id)
+    if provider_config is None or provider_config.local_model_path is None:
+        return None
+    return str(provider_config.local_model_path)
+
+
+def _profile_detail_lines(profile: RetrievalStrategyProfileRecord) -> list[str]:
+    return [
+        f"Name: {profile.name}",
+        f"Profile ID: {profile.profile_id}",
+        f"Provider: {_render_value(profile.provider_id)}",
+        f"Model ID: {_render_value(profile.model_id)}",
+        f"Model Version: {_render_value(profile.model_version)}",
+        f"Vector Engine: {profile.vector_engine}",
+        f"Vector Dimension: {profile.vector_dimension}",
+        (
+            "Indexing Fingerprint Salt: "
+            f"{_render_value(profile.payload.indexing.fingerprint_salt)}"
+        ),
+        (
+            "Semantic Fingerprint Salt: "
+            f"{_render_value(profile.payload.semantic_indexing.fingerprint_salt)}"
+        ),
+        f"Local Model Path: {_render_value(_profile_local_model_path(profile))}",
+        f"Created At: {profile.created_at.isoformat()}",
+    ]
+
+
+def _render_profile_text(
+    *,
+    title: str,
+    profile: RetrievalStrategyProfileRecord,
+    include_payload: bool,
+) -> str:
+    lines = [title]
+    lines.extend(_profile_detail_lines(profile))
+    if include_payload:
+        lines.extend(
+            [
+                "Canonical Payload:",
+                json.dumps(
+                    profile.payload.to_loader_payload(),
+                    indent=2,
+                    sort_keys=True,
+                ),
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _render_profile_list_text(profiles: list[RetrievalStrategyProfileRecord]) -> str:
+    blocks: list[str] = []
+    for index, profile in enumerate(profiles, start=1):
+        block_lines = [
+            f"{index}. {profile.name}",
+            f"   profile id: {profile.profile_id}",
+            (
+                "   provider/model: "
+                f"{_render_value(profile.provider_id)} "
+                f"{_render_value(profile.model_id)}@{_render_value(profile.model_version)}"
+            ),
+            f"   vector: {profile.vector_engine} dim={profile.vector_dimension}",
+            f"   local model path: {_render_value(_profile_local_model_path(profile))}",
+            (
+                "   salts: "
+                f"indexing={_render_value(profile.payload.indexing.fingerprint_salt)} "
+                f"semantic={_render_value(profile.payload.semantic_indexing.fingerprint_salt)}"
+            ),
+        ]
+        blocks.append("\n".join(block_lines))
+    return "\n\n".join(blocks)
+
+
+def _handle_profile_error(
+    *,
+    error: ConfigurationResolutionError,
+    output_format: OutputFormat,
+    command_name: str,
+) -> None:
+    emit_failure_response(
+        error_code=error.error_code,
+        message=error.message,
+        details=error.details,
+        exit_code=error.exit_code,
+        output_format=output_format,
+        command_name=command_name,
+    )
 
 
 @app.command("show")
@@ -54,6 +194,10 @@ def show_config(
         "project_defaults_path": str(project_defaults_path),
         "local_config_path": str(local_config_path),
         "local_config_present": local_config_path.exists(),
+        "selected_profile": _selected_profile_metadata(
+            selector=bootstrap_state.config_overrides.profile,
+            profile=container.selected_profile,
+        ),
     }
 
     envelope = SuccessEnvelope(
@@ -68,8 +212,16 @@ def show_config(
     indexing = payload["indexing"]
     semantic = payload["semantic_indexing"]
     embedding_providers = payload["embedding_providers"]
+    selected_profile = payload["metadata"]["selected_profile"]
+    selected_profile_line = "Selected profile: none"
+    if selected_profile is not None:
+        selected_profile_line = (
+            "Selected profile: "
+            f"{selected_profile['name']} ({selected_profile['profile_id']})"
+        )
     lines = [
         "Configuration source precedence: " + " -> ".join(payload["metadata"]["precedence"]),
+        selected_profile_line,
         f"Project defaults file: {payload['metadata']['project_defaults_path']}",
         f"Local config file: {payload['metadata']['local_config_path']}",
         (
@@ -103,3 +255,127 @@ def show_config(
             ]
         )
     typer.echo("\n".join(lines))
+
+
+@profile_app.command("save")
+def save_profile(
+    ctx: typer.Context,
+    name: str,
+    output_format: OutputFormat = typer.Option(OutputFormat.TEXT, "--output-format"),
+) -> None:
+    """Save the current retrieval-affecting config as a named profile."""
+
+    from codeman.cli.app import get_container
+
+    container = get_container(ctx)
+    try:
+        normalized_name = normalize_retrieval_profile_selector(name, field_name="name")
+        result = container.save_retrieval_strategy_profile.execute(
+            SaveRetrievalStrategyProfileRequest(name=normalized_name),
+        )
+    except (ConfigurationResolutionError, ValidationError, ValueError) as error:
+        if not isinstance(error, ConfigurationResolutionError):
+            error = ConfigurationResolutionError(str(error))
+        _handle_profile_error(
+            error=error,
+            output_format=output_format,
+            command_name="config.profile.save",
+        )
+
+    envelope = SuccessEnvelope(
+        data=result,
+        meta=build_command_meta("config.profile.save", output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+        return
+
+    title = "Saved retrieval strategy profile."
+    if not result.created:
+        title = "Retrieval strategy profile already exists with identical content."
+    typer.echo(
+        _render_profile_text(
+            title=title,
+            profile=result.profile,
+            include_payload=False,
+        )
+    )
+
+
+@profile_app.command("list")
+def list_profiles(
+    ctx: typer.Context,
+    output_format: OutputFormat = typer.Option(OutputFormat.TEXT, "--output-format"),
+) -> None:
+    """List saved retrieval strategy profiles for the current workspace."""
+
+    from codeman.cli.app import get_container
+
+    container = get_container(ctx)
+    try:
+        result = container.list_retrieval_strategy_profiles.execute()
+    except ConfigurationResolutionError as error:
+        _handle_profile_error(
+            error=error,
+            output_format=output_format,
+            command_name="config.profile.list",
+        )
+
+    envelope = SuccessEnvelope(
+        data=result,
+        meta=build_command_meta("config.profile.list", output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+        return
+
+    if not result.profiles:
+        typer.echo("No retrieval strategy profiles saved in this workspace.")
+        return
+
+    typer.echo(_render_profile_list_text(result.profiles))
+
+
+@profile_app.command("show")
+def show_profile(
+    ctx: typer.Context,
+    selector: str,
+    output_format: OutputFormat = typer.Option(OutputFormat.TEXT, "--output-format"),
+) -> None:
+    """Show one saved retrieval strategy profile by exact name or stable id."""
+
+    from codeman.cli.app import get_container
+
+    container = get_container(ctx)
+    try:
+        normalized_selector = normalize_retrieval_profile_selector(
+            selector,
+            field_name="selector",
+        )
+        result = container.show_retrieval_strategy_profile.execute(
+            ShowRetrievalStrategyProfileRequest(selector=normalized_selector),
+        )
+    except (ConfigurationResolutionError, ValidationError, ValueError) as error:
+        if not isinstance(error, ConfigurationResolutionError):
+            error = ConfigurationResolutionError(str(error))
+        _handle_profile_error(
+            error=error,
+            output_format=output_format,
+            command_name="config.profile.show",
+        )
+
+    envelope = SuccessEnvelope(
+        data=result,
+        meta=build_command_meta("config.profile.show", output_format),
+    )
+    if output_format is OutputFormat.JSON:
+        emit_json_response(envelope)
+        return
+
+    typer.echo(
+        _render_profile_text(
+            title="Retrieval strategy profile.",
+            profile=result.profile,
+            include_payload=True,
+        )
+    )
