@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Protocol
 
 from codeman.contracts.chunking import ChunkPayloadDocument
-from codeman.contracts.evaluation import BenchmarkRunArtifactDocument
+from codeman.contracts.evaluation import (
+    BenchmarkMetricsArtifactDocument,
+    BenchmarkRunArtifactDocument,
+)
 from codeman.contracts.repository import SnapshotManifestDocument
 from codeman.contracts.retrieval import SemanticEmbeddingArtifactDocument
 
@@ -51,3 +54,17 @@ class ArtifactStorePort(Protocol):
         artifact_path: Path,
     ) -> BenchmarkRunArtifactDocument:
         """Load one previously persisted benchmark-run artifact."""
+
+    def write_benchmark_metrics_artifact(
+        self,
+        artifact: BenchmarkMetricsArtifactDocument,
+        *,
+        run_id: str,
+    ) -> Path:
+        """Persist one normalized benchmark-metrics artifact and return its path."""
+
+    def read_benchmark_metrics_artifact(
+        self,
+        artifact_path: Path,
+    ) -> BenchmarkMetricsArtifactDocument:
+        """Load one previously persisted benchmark-metrics artifact."""

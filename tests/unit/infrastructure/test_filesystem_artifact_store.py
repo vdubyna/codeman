@@ -6,9 +6,16 @@ from pathlib import Path
 
 from codeman.contracts.chunking import ChunkPayloadDocument
 from codeman.contracts.evaluation import (
+    BenchmarkAggregateMetrics,
+    BenchmarkCaseMetricResult,
     BenchmarkDatasetDocument,
     BenchmarkDatasetSummary,
+    BenchmarkIndexingDurationSummary,
+    BenchmarkMetricsArtifactDocument,
+    BenchmarkMetricsSummary,
+    BenchmarkPerformanceSummary,
     BenchmarkQueryCase,
+    BenchmarkQueryLatencySummary,
     BenchmarkQuerySourceKind,
     BenchmarkRelevanceJudgment,
     BenchmarkRunArtifactDocument,
@@ -157,3 +164,109 @@ def test_write_and_read_benchmark_run_artifact_round_trip(tmp_path: Path) -> Non
     assert destination == tmp_path / "benchmarks" / "run-123" / "run.json"
     assert restored.run.run_id == "run-123"
     assert restored.dataset.dataset_id == "fixture-benchmark"
+
+
+def test_write_and_read_benchmark_metrics_artifact_round_trip(tmp_path: Path) -> None:
+    artifact_store = FilesystemArtifactStore(tmp_path)
+    metrics_artifact = BenchmarkMetricsArtifactDocument(
+        run=BenchmarkRunRecord(
+            run_id="run-123",
+            repository_id="repo-123",
+            snapshot_id="snapshot-123",
+            retrieval_mode="lexical",
+            dataset_id="fixture-benchmark",
+            dataset_version="2026-03-15",
+            dataset_fingerprint="f" * 64,
+            case_count=1,
+            completed_case_count=1,
+            status=BenchmarkRunStatus.SUCCEEDED,
+            artifact_path=tmp_path / "benchmarks" / "run-123" / "run.json",
+            evaluated_at_k=5,
+            recall_at_k=1.0,
+            mrr=1.0,
+            ndcg_at_k=1.0,
+            query_latency_mean_ms=5.0,
+            query_latency_p95_ms=5,
+            lexical_index_duration_ms=42,
+            metrics_artifact_path=tmp_path / "benchmarks" / "run-123" / "metrics.json",
+            metrics_computed_at=datetime(2026, 3, 15, 9, 2, tzinfo=UTC),
+            started_at=datetime(2026, 3, 15, 9, 0, tzinfo=UTC),
+            completed_at=datetime(2026, 3, 15, 9, 1, tzinfo=UTC),
+        ),
+        repository=RetrievalRepositoryContext(
+            repository_id="repo-123",
+            repository_name="registered-repo",
+        ),
+        snapshot=RetrievalSnapshotContext(
+            snapshot_id="snapshot-123",
+            revision_identity="revision-abc",
+            revision_source="filesystem_fingerprint",
+        ),
+        build=LexicalRetrievalBuildContext(
+            build_id="lexical-build-123",
+            indexing_config_fingerprint="index-fingerprint-123",
+            lexical_engine="sqlite-fts5",
+            tokenizer_spec="unicode61 remove_diacritics 0 tokenchars '_'",
+            indexed_fields=["content", "relative_path"],
+            build_duration_ms=42,
+        ),
+        dataset=BenchmarkDatasetSummary(
+            dataset_path=tmp_path / "dataset.json",
+            schema_version="1",
+            dataset_id="fixture-benchmark",
+            dataset_version="2026-03-15",
+            case_count=1,
+            judgment_count=1,
+            dataset_fingerprint="f" * 64,
+        ),
+        summary=BenchmarkMetricsSummary(
+            evaluated_at_k=5,
+            metrics=BenchmarkAggregateMetrics(
+                recall_at_k=1.0,
+                mrr=1.0,
+                ndcg_at_k=1.0,
+            ),
+            performance=BenchmarkPerformanceSummary(
+                query_latency=BenchmarkQueryLatencySummary(
+                    sample_count=1,
+                    min_ms=5,
+                    mean_ms=5.0,
+                    median_ms=5.0,
+                    p95_ms=5,
+                    max_ms=5,
+                ),
+                indexing=BenchmarkIndexingDurationSummary(
+                    lexical_build_duration_ms=42,
+                ),
+            ),
+            metrics_computed_at=datetime(2026, 3, 15, 9, 2, tzinfo=UTC),
+            artifact_path=tmp_path / "benchmarks" / "run-123" / "metrics.json",
+        ),
+        cases=[
+            BenchmarkCaseMetricResult(
+                query_id="case-1",
+                source_kind=BenchmarkQuerySourceKind.HUMAN_AUTHORED,
+                evaluated_at_k=5,
+                relevant_judgment_count=1,
+                matched_judgment_count=1,
+                first_relevant_rank=1,
+                recall_at_k=1.0,
+                reciprocal_rank=1.0,
+                ndcg_at_k=1.0,
+                query_latency_ms=5,
+                judgments=[],
+            )
+        ],
+    )
+
+    destination = artifact_store.write_benchmark_metrics_artifact(
+        metrics_artifact,
+        run_id="run-123",
+    )
+    restored = artifact_store.read_benchmark_metrics_artifact(destination)
+
+    assert destination == tmp_path / "benchmarks" / "run-123" / "metrics.json"
+    assert restored.summary.metrics.recall_at_k == 1.0
+    assert restored.run.metrics_artifact_path == (
+        tmp_path / "benchmarks" / "run-123" / "metrics.json"
+    )

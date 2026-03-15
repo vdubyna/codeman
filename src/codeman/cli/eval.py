@@ -8,6 +8,7 @@ from typing import Any
 import typer
 from pydantic import ValidationError
 
+from codeman.application.evaluation.calculate_benchmark_metrics import BenchmarkMetricsError
 from codeman.application.evaluation.load_benchmark_dataset import BenchmarkDatasetLoadError
 from codeman.application.evaluation.run_benchmark import BenchmarkRunError
 from codeman.bootstrap import BootstrapContainer
@@ -47,7 +48,41 @@ def _render_text_output(result: RunBenchmarkResult) -> str:
         f"Completed At: {result.run.completed_at.isoformat() if result.run.completed_at else '-'}",
         f"Artifact Path: {result.run.artifact_path}",
     ]
+    if result.metrics is not None:
+        query_latency = result.metrics.performance.query_latency
+        indexing = result.metrics.performance.indexing
+        lines.extend(
+            [
+                f"Evaluated At K: {result.metrics.evaluated_at_k}",
+                f"Recall@K: {result.metrics.metrics.recall_at_k:.4f}",
+                f"MRR: {result.metrics.metrics.mrr:.4f}",
+                f"NDCG@K: {result.metrics.metrics.ndcg_at_k:.4f}",
+                f"Query Latency Mean (ms): {_format_number(query_latency.mean_ms)}",
+                f"Query Latency P95 (ms): {_format_number(query_latency.p95_ms)}",
+                (
+                    "Lexical Build Duration (ms): "
+                    f"{_format_number(indexing.lexical_build_duration_ms)}"
+                ),
+                (
+                    "Semantic Build Duration (ms): "
+                    f"{_format_number(indexing.semantic_build_duration_ms)}"
+                ),
+                (
+                    "Derived Total Build Duration (ms): "
+                    f"{_format_number(indexing.derived_total_build_duration_ms)}"
+                ),
+                f"Metrics Artifact Path: {result.metrics.artifact_path}",
+            ]
+        )
     return "\n".join(lines)
+
+
+def _format_number(value: float | int | None) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, float):
+        return f"{value:.2f}"
+    return str(value)
 
 
 def _validation_error_details(error: ValidationError) -> list[dict[str, Any]]:
@@ -108,6 +143,15 @@ def benchmark(
             command_name="eval.benchmark",
         )
     except BenchmarkRunError as error:
+        emit_failure_response(
+            error_code=error.error_code,
+            message=error.message,
+            details=error.details,
+            exit_code=error.exit_code,
+            output_format=output_format,
+            command_name="eval.benchmark",
+        )
+    except BenchmarkMetricsError as error:
         emit_failure_response(
             error_code=error.error_code,
             message=error.message,

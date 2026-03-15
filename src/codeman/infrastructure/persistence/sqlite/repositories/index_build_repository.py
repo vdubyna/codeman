@@ -46,6 +46,7 @@ class SqliteIndexBuildStore(IndexBuildStorePort):
             tokenizer_spec=build.tokenizer_spec,
             indexed_fields_json=json.dumps(build.indexed_fields),
             chunks_indexed=build.chunks_indexed,
+            build_duration_ms=build.build_duration_ms,
             index_path=str(build.index_path),
             created_at=build.created_at,
         )
@@ -168,6 +169,7 @@ class SqliteIndexBuildStore(IndexBuildStorePort):
             tokenizer_spec=row["tokenizer_spec"],
             indexed_fields=list(json.loads(row["indexed_fields_json"])),
             chunks_indexed=row["chunks_indexed"],
+            build_duration_ms=row["build_duration_ms"],
             index_path=Path(row["index_path"]),
             created_at=row["created_at"],
         )

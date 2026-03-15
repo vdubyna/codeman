@@ -248,6 +248,7 @@ run id that is reused for:
 
 - the SQLite `benchmark_runs` lifecycle row
 - the generated artifact under `.codeman/artifacts/benchmarks/<run-id>/run.json`
+- the additive metrics artifact under `.codeman/artifacts/benchmarks/<run-id>/metrics.json`
 - the configuration provenance row exposed through `config provenance show <run-id>`
 
 Supported options:
@@ -259,13 +260,16 @@ Progress behavior:
 
 - progress and phase lines are written only to `stderr`
 - JSON mode keeps `stdout` as one final success or failure envelope with no interleaved commentary
-- stable phase lines currently include dataset loading, baseline resolution, case execution, artifact writing, and provenance recording
+- stable phase lines currently include dataset loading, baseline resolution, case execution, artifact writing, provenance recording, and benchmark-metrics calculation
 
 Text output includes:
 
 - run id, repository id, snapshot id, retrieval mode, and build id
 - dataset id, dataset version, and dataset fingerprint
 - case counts, truthful run status, timestamps, and benchmark artifact path
+- `Recall@K`, `MRR`, `NDCG@K`, and the explicit evaluated cutoff `k`
+- query latency summary plus indexing-duration fields where they are truthfully available
+- benchmark metrics artifact path for operator inspection
 
 JSON output keeps the standard success envelope on `stdout` and returns:
 
@@ -274,6 +278,7 @@ JSON output keeps the standard success envelope on `stdout` and returns:
 - `snapshot`
 - `build`
 - `dataset`
+- `metrics`
 
 Failure semantics:
 
@@ -281,11 +286,12 @@ Failure semantics:
 - benchmark dataset path, JSON, and schema failures reuse the stable dataset loader error codes from Story 4.1
 - missing selected retrieval baselines fail with `error.code = "benchmark_retrieval_baseline_missing"`
 - retrieval-path failures after execution starts fail with `error.code = "benchmark_retrieval_mode_unavailable"`
+- benchmark-metrics failures after raw execution succeeds use benchmark-specific error codes such as `benchmark_artifact_missing`, `benchmark_artifact_corrupt`, `benchmark_run_incomplete`, or `benchmark_metrics_input_unsupported`; the succeeded raw run evidence remains persisted truthfully
 - repository-not-registered failures keep the shared `repository_not_registered` contract
 
-The benchmark summary is intentionally compact in Story 4.2. Raw per-case evidence lives in the
-generated benchmark artifact; metrics, reports, run-to-run comparisons, and regression detection
-remain separate later stories.
+The benchmark summary remains compact. Raw per-case evidence lives in `run.json`, while computed
+retrieval metrics and performance summaries live additively in `metrics.json`. Report generation,
+run-to-run comparisons, and regression detection remain separate later stories.
 
 ## Config Commands
 

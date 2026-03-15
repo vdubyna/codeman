@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import codeman.application.indexing.build_lexical_index as build_lexical_index_module
 from codeman.application.indexing.build_lexical_index import (
     BuildLexicalIndexUseCase,
     ChunkBaselineMissingError,
@@ -130,6 +131,31 @@ class FakeIndexBuildStore:
             if build.repository_id == repository_id:
                 return build
         return None
+
+
+@dataclass
+class FakeClock:
+    current_ns: int = 0
+
+    def __call__(self) -> int:
+        return self.current_ns
+
+    def advance_ms(self, duration_ms: int) -> None:
+        self.current_ns += duration_ms * 1_000_000
+
+
+@dataclass
+class ClockedArtifactStore:
+    delegate: FilesystemArtifactStore
+    clock: FakeClock
+    read_delay_ms: int
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.delegate, name)
+
+    def read_chunk_payload(self, payload_path: Path) -> ChunkPayloadDocument:
+        self.clock.advance_ms(self.read_delay_ms)
+        return self.delegate.read_chunk_payload(payload_path)
 
 
 def build_repository_record(repository_path: Path) -> RepositoryRecord:
@@ -304,8 +330,109 @@ def test_build_lexical_index_reads_payloads_in_deterministic_order_and_records_m
     assert result.build.snapshot_id == snapshot.snapshot_id
     assert result.build.indexing_config_fingerprint == DEFAULT_INDEXING_FINGERPRINT
     assert result.build.indexed_fields == ["content", "relative_path"]
+    assert result.build.build_duration_ms is not None
+    assert result.build.build_duration_ms >= 0
     assert index_build_store.created_builds
     assert index_build_store.created_builds[0].index_path == result.build.index_path
+
+
+def test_build_lexical_index_duration_includes_chunk_payload_loading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    repository_path.mkdir()
+    runtime_paths = build_runtime_paths(workspace)
+    delegate_store = FilesystemArtifactStore(runtime_paths.artifacts)
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(
+        repository.repository_id,
+        workspace,
+        chunk_generation_completed_at=datetime.now(UTC),
+    )
+    first_payload_path = delegate_store.write_chunk_payload(
+        ChunkPayloadDocument(
+            chunk_id="source-a:javascript_structure:1",
+            snapshot_id=snapshot.snapshot_id,
+            repository_id=repository.repository_id,
+            source_file_id="source-a",
+            relative_path="assets/app.js",
+            language="javascript",
+            strategy="javascript_structure",
+            source_content_hash="hash-source-a",
+            start_line=1,
+            end_line=3,
+            start_byte=0,
+            end_byte=42,
+            content="export function boot() { return 'ok'; }",
+        ),
+        snapshot_id=snapshot.snapshot_id,
+    )
+    second_payload_path = delegate_store.write_chunk_payload(
+        ChunkPayloadDocument(
+            chunk_id="source-b:php_structure:10",
+            snapshot_id=snapshot.snapshot_id,
+            repository_id=repository.repository_id,
+            source_file_id="source-b",
+            relative_path="src/Controller/HomeController.php",
+            language="php",
+            strategy="php_structure",
+            source_content_hash="hash-source-b",
+            start_line=10,
+            end_line=12,
+            start_byte=100,
+            end_byte=142,
+            content="class HomeController { public function __invoke() {} }",
+        ),
+        snapshot_id=snapshot.snapshot_id,
+    )
+    clock = FakeClock()
+    monkeypatch.setattr(build_lexical_index_module, "perf_counter_ns", clock)
+    use_case = BuildLexicalIndexUseCase(
+        runtime_paths=runtime_paths,
+        repository_store=FakeRepositoryStore(repository=repository),
+        snapshot_store=FakeSnapshotStore(snapshot=snapshot),
+        chunk_store=FakeChunkStore(
+            chunks=[
+                build_chunk_record(
+                    snapshot_id=snapshot.snapshot_id,
+                    repository_id=repository.repository_id,
+                    source_file_id="source-a",
+                    relative_path="assets/app.js",
+                    language="javascript",
+                    strategy="javascript_structure",
+                    payload_path=first_payload_path,
+                    start_line=1,
+                    start_byte=0,
+                ),
+                build_chunk_record(
+                    snapshot_id=snapshot.snapshot_id,
+                    repository_id=repository.repository_id,
+                    source_file_id="source-b",
+                    relative_path="src/Controller/HomeController.php",
+                    language="php",
+                    strategy="php_structure",
+                    payload_path=second_payload_path,
+                    start_line=10,
+                    start_byte=100,
+                ),
+            ],
+        ),
+        artifact_store=ClockedArtifactStore(
+            delegate=delegate_store,
+            clock=clock,
+            read_delay_ms=5,
+        ),
+        lexical_index=FakeLexicalIndexBuilder(runtime_root=runtime_paths.root),
+        index_build_store=FakeIndexBuildStore(),
+        indexing_config=IndexingConfig(),
+    )
+
+    result = use_case.execute(BuildLexicalIndexRequest(snapshot_id=snapshot.snapshot_id))
+
+    assert result.build.build_duration_ms == 10
 
 
 def test_build_lexical_index_requires_chunk_baseline_for_current_configuration(

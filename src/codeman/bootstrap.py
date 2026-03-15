@@ -18,6 +18,9 @@ from codeman.application.config.save_retrieval_strategy_profile import (
 from codeman.application.config.show_retrieval_strategy_profile import (
     ShowRetrievalStrategyProfileUseCase,
 )
+from codeman.application.evaluation.calculate_benchmark_metrics import (
+    CalculateBenchmarkMetricsUseCase,
+)
 from codeman.application.evaluation.load_benchmark_dataset import LoadBenchmarkDatasetUseCase
 from codeman.application.evaluation.run_benchmark import RunBenchmarkUseCase
 from codeman.application.indexing.build_chunks import BuildChunksUseCase
@@ -130,6 +133,7 @@ class BootstrapContainer:
     run_hybrid_query: RunHybridQueryUseCase
     compare_retrieval_modes: CompareRetrievalModesUseCase
     load_benchmark_dataset: LoadBenchmarkDatasetUseCase
+    calculate_benchmark_metrics: CalculateBenchmarkMetricsUseCase
     run_benchmark: RunBenchmarkUseCase
     reindex_repository: ReindexRepositoryUseCase
     save_retrieval_strategy_profile: SaveRetrievalStrategyProfileUseCase
@@ -360,6 +364,13 @@ def bootstrap(
         formatter=RetrievalResultFormatter(),
     )
     load_benchmark_dataset = LoadBenchmarkDatasetUseCase()
+    calculate_benchmark_metrics = CalculateBenchmarkMetricsUseCase(
+        runtime_paths=runtime_paths,
+        benchmark_run_store=benchmark_run_store,
+        artifact_store=artifact_store,
+        index_build_store=index_build_store,
+        semantic_index_build_store=semantic_index_build_store,
+    )
     run_benchmark = RunBenchmarkUseCase(
         runtime_paths=runtime_paths,
         repository_store=metadata_store,
@@ -376,6 +387,7 @@ def bootstrap(
         semantic_indexing_config=config.semantic_indexing,
         embedding_providers_config=config.embedding_providers,
         record_run_provenance=record_run_provenance,
+        calculate_benchmark_metrics=calculate_benchmark_metrics,
     )
     reindex_repository = ReindexRepositoryUseCase(
         runtime_paths=runtime_paths,
@@ -429,6 +441,7 @@ def bootstrap(
         run_hybrid_query=run_hybrid_query,
         compare_retrieval_modes=compare_retrieval_modes,
         load_benchmark_dataset=load_benchmark_dataset,
+        calculate_benchmark_metrics=calculate_benchmark_metrics,
         run_benchmark=run_benchmark,
         reindex_repository=reindex_repository,
         save_retrieval_strategy_profile=save_retrieval_strategy_profile,

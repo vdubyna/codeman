@@ -26,6 +26,7 @@ from codeman.contracts.retrieval import (
 
 BENCHMARK_DATASET_SCHEMA_VERSION = "1"
 BENCHMARK_RUN_ARTIFACT_SCHEMA_VERSION = "1"
+BENCHMARK_METRICS_ARTIFACT_SCHEMA_VERSION = "1"
 
 
 def _normalize_required_text(value: str | None, *, field_name: str) -> str:
@@ -246,6 +247,17 @@ class BenchmarkRunRecord(BaseModel):
     completed_case_count: int = Field(ge=0)
     status: BenchmarkRunStatus
     artifact_path: Path | None = None
+    evaluated_at_k: int | None = Field(default=None, gt=0, le=100)
+    recall_at_k: float | None = Field(default=None, ge=0.0, le=1.0)
+    mrr: float | None = Field(default=None, ge=0.0, le=1.0)
+    ndcg_at_k: float | None = Field(default=None, ge=0.0, le=1.0)
+    query_latency_mean_ms: float | None = Field(default=None, ge=0.0)
+    query_latency_p95_ms: int | None = Field(default=None, ge=0)
+    lexical_index_duration_ms: int | None = Field(default=None, ge=0)
+    semantic_index_duration_ms: int | None = Field(default=None, ge=0)
+    derived_index_duration_ms: int | None = Field(default=None, ge=0)
+    metrics_artifact_path: Path | None = None
+    metrics_computed_at: datetime | None = None
     error_code: str | None = None
     error_message: str | None = None
     started_at: datetime
@@ -271,6 +283,111 @@ class BenchmarkRunRecord(BaseModel):
         return self
 
 
+class BenchmarkAggregateMetrics(BaseModel):
+    """Aggregate retrieval-quality metrics for one benchmark run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    recall_at_k: float = Field(ge=0.0, le=1.0)
+    mrr: float = Field(ge=0.0, le=1.0)
+    ndcg_at_k: float = Field(ge=0.0, le=1.0)
+
+
+class BenchmarkQueryLatencySummary(BaseModel):
+    """Comparable latency summary for one benchmark run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sample_count: int = Field(ge=0)
+    min_ms: int | None = Field(default=None, ge=0)
+    mean_ms: float | None = Field(default=None, ge=0.0)
+    median_ms: float | None = Field(default=None, ge=0.0)
+    p95_ms: int | None = Field(default=None, ge=0)
+    max_ms: int | None = Field(default=None, ge=0)
+
+
+class BenchmarkIndexingDurationSummary(BaseModel):
+    """Comparable indexing-duration summary for one benchmark run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lexical_build_duration_ms: int | None = Field(default=None, ge=0)
+    semantic_build_duration_ms: int | None = Field(default=None, ge=0)
+    derived_total_build_duration_ms: int | None = Field(default=None, ge=0)
+
+
+class BenchmarkPerformanceSummary(BaseModel):
+    """Aggregate performance metrics for one benchmark run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query_latency: BenchmarkQueryLatencySummary
+    indexing: BenchmarkIndexingDurationSummary
+
+
+class BenchmarkJudgmentMetricResult(BaseModel):
+    """Matching detail for one authored judgment during metric calculation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    judgment_index: int = Field(ge=0)
+    relative_path: str
+    language: SourceLanguage | None = None
+    start_line: int | None = Field(default=None, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+    relevance_grade: int = Field(ge=1)
+    matched_result_ranks: list[int] = Field(default_factory=list)
+    first_matched_rank: int | None = Field(default=None, ge=1)
+    gain_rank: int | None = Field(default=None, ge=1)
+
+
+class BenchmarkCaseMetricResult(BaseModel):
+    """Per-case metrics retained for later reporting and inspection."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query_id: str
+    source_kind: BenchmarkQuerySourceKind
+    evaluated_at_k: int = Field(gt=0, le=100)
+    relevant_judgment_count: int = Field(ge=0)
+    matched_judgment_count: int = Field(ge=0)
+    first_relevant_rank: int | None = Field(default=None, ge=1)
+    recall_at_k: float = Field(ge=0.0, le=1.0)
+    reciprocal_rank: float = Field(ge=0.0, le=1.0)
+    ndcg_at_k: float = Field(ge=0.0, le=1.0)
+    query_latency_ms: int = Field(ge=0)
+    judgments: list[BenchmarkJudgmentMetricResult] = Field(default_factory=list)
+
+
+class BenchmarkMetricsSummary(BaseModel):
+    """Compact benchmark-metrics summary surfaced to operators and automation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    evaluated_at_k: int = Field(gt=0, le=100)
+    metrics: BenchmarkAggregateMetrics
+    performance: BenchmarkPerformanceSummary
+    metrics_computed_at: datetime
+    artifact_path: Path | None = None
+
+
+class CalculateBenchmarkMetricsRequest(BaseModel):
+    """Input DTO for calculating metrics for one completed benchmark run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+
+
+class CalculateBenchmarkMetricsResult(BaseModel):
+    """Output DTO for benchmark metrics calculation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run: BenchmarkRunRecord
+    metrics: BenchmarkMetricsSummary
+
+
 class RunBenchmarkResult(BaseModel):
     """Output DTO for successful or failed benchmark execution attempts."""
 
@@ -281,6 +398,7 @@ class RunBenchmarkResult(BaseModel):
     snapshot: RetrievalSnapshotContext
     build: BenchmarkRetrievalBuildContext
     dataset: BenchmarkDatasetSummary
+    metrics: BenchmarkMetricsSummary | None = None
 
 
 class BenchmarkRunFailure(BaseModel):
@@ -323,6 +441,21 @@ class BenchmarkRunArtifactDocument(BaseModel):
     failure: BenchmarkRunFailure | None = None
 
 
+class BenchmarkMetricsArtifactDocument(BaseModel):
+    """Benchmark metrics artifact stored separately from raw execution evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = BENCHMARK_METRICS_ARTIFACT_SCHEMA_VERSION
+    run: BenchmarkRunRecord
+    repository: RetrievalRepositoryContext
+    snapshot: RetrievalSnapshotContext
+    build: BenchmarkRetrievalBuildContext
+    dataset: BenchmarkDatasetSummary
+    summary: BenchmarkMetricsSummary
+    cases: list[BenchmarkCaseMetricResult] = Field(default_factory=list)
+
+
 def build_benchmark_dataset_canonical_json(dataset: BenchmarkDatasetDocument) -> str:
     """Serialize the benchmark dataset deterministically for hashing and persistence."""
 
@@ -343,19 +476,30 @@ def build_benchmark_dataset_fingerprint(dataset: BenchmarkDatasetDocument) -> st
 
 __all__ = [
     "BENCHMARK_DATASET_SCHEMA_VERSION",
+    "BENCHMARK_METRICS_ARTIFACT_SCHEMA_VERSION",
     "BENCHMARK_RUN_ARTIFACT_SCHEMA_VERSION",
+    "BenchmarkAggregateMetrics",
     "BenchmarkCaseExecutionArtifact",
+    "BenchmarkCaseMetricResult",
     "BenchmarkCaseRetrievalResult",
     "BenchmarkDatasetDocument",
     "BenchmarkDatasetSummary",
+    "BenchmarkIndexingDurationSummary",
+    "BenchmarkJudgmentMetricResult",
+    "BenchmarkMetricsArtifactDocument",
+    "BenchmarkMetricsSummary",
+    "BenchmarkPerformanceSummary",
     "BenchmarkQueryCase",
     "BenchmarkQuerySourceKind",
+    "BenchmarkQueryLatencySummary",
     "BenchmarkRelevanceJudgment",
     "BenchmarkRetrievalBuildContext",
     "BenchmarkRunArtifactDocument",
     "BenchmarkRunFailure",
     "BenchmarkRunRecord",
     "BenchmarkRunStatus",
+    "CalculateBenchmarkMetricsRequest",
+    "CalculateBenchmarkMetricsResult",
     "LoadBenchmarkDatasetRequest",
     "LoadBenchmarkDatasetResult",
     "RunBenchmarkRequest",

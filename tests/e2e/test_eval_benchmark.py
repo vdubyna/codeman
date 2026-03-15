@@ -220,21 +220,31 @@ def test_uv_run_eval_benchmark_supports_text_and_json_output(
 
     payload = json.loads(json_result.stdout)
     artifact_path = Path(payload["data"]["run"]["artifact_path"])
+    metrics_artifact_path = Path(payload["data"]["metrics"]["artifact_path"])
 
     assert text_result.returncode == 0, text_result.stderr
     assert json_result.returncode == 0, json_result.stderr
     assert "Benchmark run completed." in text_result.stdout
     assert f"Retrieval Mode: {retrieval_mode}" in text_result.stdout
     assert "Dataset ID: mixed-stack-fixture-golden-queries" in text_result.stdout
+    assert "Recall@K:" in text_result.stdout
+    assert "Metrics Artifact Path:" in text_result.stdout
     assert payload["ok"] is True
     assert payload["data"]["run"]["status"] == "succeeded"
     assert payload["data"]["run"]["retrieval_mode"] == retrieval_mode
     assert payload["data"]["dataset"]["dataset_id"] == "mixed-stack-fixture-golden-queries"
+    assert payload["data"]["metrics"]["evaluated_at_k"] == 20
+    assert payload["data"]["metrics"]["metrics"]["recall_at_k"] >= 0.0
+    assert payload["data"]["metrics"]["metrics"]["mrr"] >= 0.0
+    assert payload["data"]["metrics"]["metrics"]["ndcg_at_k"] >= 0.0
     assert payload["meta"]["command"] == "eval.benchmark"
     assert artifact_path.exists()
+    assert metrics_artifact_path.exists()
     assert ".codeman/artifacts/benchmarks/" in artifact_path.as_posix()
+    assert metrics_artifact_path.name == "metrics.json"
     assert "Loading benchmark dataset:" in text_result.stderr
     assert "Resolving benchmark baseline for repository:" in text_result.stderr
     assert "Running benchmark case 1/" in text_result.stderr
     assert "Writing benchmark artifact for run:" in text_result.stderr
+    assert "Calculating benchmark metrics for run:" in text_result.stderr
     assert "Recording benchmark provenance for run:" in json_result.stderr

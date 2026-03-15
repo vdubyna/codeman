@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import codeman.application.indexing.build_semantic_index as build_semantic_index_module
 from codeman.application.indexing.build_embeddings import BuildEmbeddingsStage
 from codeman.application.indexing.build_semantic_index import BuildSemanticIndexUseCase
 from codeman.application.indexing.build_vector_index import BuildVectorIndexStage
@@ -120,6 +121,31 @@ class FakeSemanticIndexBuildStore:
             ):
                 return build
         return None
+
+
+@dataclass
+class FakeClock:
+    current_ns: int = 0
+
+    def __call__(self) -> int:
+        return self.current_ns
+
+    def advance_ms(self, duration_ms: int) -> None:
+        self.current_ns += duration_ms * 1_000_000
+
+
+@dataclass
+class ClockedArtifactStore:
+    delegate: FilesystemArtifactStore
+    clock: FakeClock
+    read_delay_ms: int
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.delegate, name)
+
+    def read_chunk_payload(self, payload_path: Path) -> ChunkPayloadDocument:
+        self.clock.advance_ms(self.read_delay_ms)
+        return self.delegate.read_chunk_payload(payload_path)
 
 
 @dataclass
@@ -352,6 +378,8 @@ def test_build_semantic_index_reads_payloads_in_deterministic_order_and_records_
         build_semantic_config(local_model_path),
         build_embedding_providers_config(local_model_path),
     )
+    assert result.build.build_duration_ms is not None
+    assert result.build.build_duration_ms >= 0
     assert result.diagnostics.document_count == 2
     assert result.diagnostics.cache_summary.embedding_documents_regenerated == 2
     with sqlite3.connect(result.build.artifact_path) as connection:
@@ -360,6 +388,104 @@ def test_build_semantic_index_reads_payloads_in_deterministic_order_and_records_
         ).fetchone()[0]
 
     assert stored_count == 2
+
+
+def test_build_semantic_index_duration_includes_chunk_payload_loading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    repository_path = tmp_path / "registered-repo"
+    repository_path.mkdir()
+    local_model_path = tmp_path / "local-model"
+    local_model_path.mkdir()
+    runtime_paths = build_runtime_paths(workspace)
+    delegate_store = FilesystemArtifactStore(runtime_paths.artifacts)
+    repository = build_repository_record(repository_path.resolve())
+    snapshot = build_snapshot_record(repository.repository_id, workspace)
+    first_payload_path = delegate_store.write_chunk_payload(
+        ChunkPayloadDocument(
+            chunk_id="source-a:javascript_structure:1",
+            snapshot_id=snapshot.snapshot_id,
+            repository_id=repository.repository_id,
+            source_file_id="source-a",
+            relative_path="assets/app.js",
+            language="javascript",
+            strategy="javascript_structure",
+            source_content_hash="hash-source-a",
+            start_line=1,
+            end_line=3,
+            start_byte=0,
+            end_byte=42,
+            content='export function boot() { return "codeman"; }',
+        ),
+        snapshot_id=snapshot.snapshot_id,
+    )
+    second_payload_path = delegate_store.write_chunk_payload(
+        ChunkPayloadDocument(
+            chunk_id="source-b:php_structure:10",
+            snapshot_id=snapshot.snapshot_id,
+            repository_id=repository.repository_id,
+            source_file_id="source-b",
+            relative_path="src/Controller/HomeController.php",
+            language="php",
+            strategy="php_structure",
+            source_content_hash="hash-source-b",
+            start_line=10,
+            end_line=12,
+            start_byte=100,
+            end_byte=142,
+            content=(
+                "final class HomeController { public function __invoke(): string "
+                "{ return 'home'; } }"
+            ),
+        ),
+        snapshot_id=snapshot.snapshot_id,
+    )
+    clock = FakeClock()
+    monkeypatch.setattr(build_semantic_index_module, "perf_counter_ns", clock)
+    use_case = build_use_case(
+        workspace=workspace,
+        repository=repository,
+        snapshot=snapshot,
+        chunks=[
+            build_chunk_record(
+                snapshot_id=snapshot.snapshot_id,
+                repository_id=repository.repository_id,
+                source_file_id="source-a",
+                relative_path="assets/app.js",
+                language="javascript",
+                strategy="javascript_structure",
+                payload_path=first_payload_path,
+                start_line=1,
+                start_byte=0,
+            ),
+            build_chunk_record(
+                snapshot_id=snapshot.snapshot_id,
+                repository_id=repository.repository_id,
+                source_file_id="source-b",
+                relative_path="src/Controller/HomeController.php",
+                language="php",
+                strategy="php_structure",
+                payload_path=second_payload_path,
+                start_line=10,
+                start_byte=100,
+            ),
+        ],
+        semantic_config=build_semantic_config(local_model_path),
+        embedding_providers_config=build_embedding_providers_config(local_model_path),
+        artifact_store=ClockedArtifactStore(
+            delegate=delegate_store,
+            clock=clock,
+            read_delay_ms=5,
+        ),
+        semantic_build_store=FakeSemanticIndexBuildStore(),
+    )
+
+    result = use_case.execute(BuildSemanticIndexRequest(snapshot_id=snapshot.snapshot_id))
+
+    assert result.build.build_duration_ms == 10
 
 
 def test_build_semantic_index_requires_registered_snapshot(tmp_path: Path) -> None:

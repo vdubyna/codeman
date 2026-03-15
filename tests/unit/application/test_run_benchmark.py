@@ -8,6 +8,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from codeman.application.evaluation.calculate_benchmark_metrics import (
+    CalculateBenchmarkMetricsUseCase,
+)
 from codeman.application.evaluation.load_benchmark_dataset import (
     BenchmarkDatasetValidationError,
     LoadBenchmarkDatasetUseCase,
@@ -27,7 +30,13 @@ from codeman.config.semantic_indexing import (
     build_semantic_indexing_fingerprint,
 )
 from codeman.contracts.configuration import RecordRunConfigurationProvenanceRequest
-from codeman.contracts.evaluation import BenchmarkRunStatus, RunBenchmarkRequest
+from codeman.contracts.evaluation import (
+    BenchmarkMetricsSummary,
+    BenchmarkRunRecord,
+    BenchmarkRunStatus,
+    CalculateBenchmarkMetricsRequest,
+    RunBenchmarkRequest,
+)
 from codeman.contracts.repository import RepositoryRecord, SnapshotRecord
 from codeman.contracts.retrieval import (
     HybridComponentQueryDiagnostics,
@@ -550,6 +559,77 @@ class StubRunProvenanceUseCase:
         return SimpleNamespace(run_id=request.run_id)
 
 
+@dataclass
+class StubCalculateBenchmarkMetricsUseCase:
+    requests: list[CalculateBenchmarkMetricsRequest] = field(default_factory=list)
+
+    def execute(self, request: CalculateBenchmarkMetricsRequest) -> object:
+        self.requests.append(request)
+        return SimpleNamespace(
+            run=build_run_record_for_metrics(run_id=request.run_id),
+            metrics=BenchmarkMetricsSummary.model_validate(
+                {
+                    "evaluated_at_k": 7,
+                    "metrics": {
+                        "recall_at_k": 1.0,
+                        "mrr": 1.0,
+                        "ndcg_at_k": 1.0,
+                    },
+                    "performance": {
+                        "query_latency": {
+                            "sample_count": 1,
+                            "min_ms": 5,
+                            "mean_ms": 5.0,
+                            "median_ms": 5.0,
+                            "p95_ms": 5,
+                            "max_ms": 5,
+                        },
+                        "indexing": {
+                            "lexical_build_duration_ms": 42,
+                            "semantic_build_duration_ms": None,
+                            "derived_total_build_duration_ms": None,
+                        },
+                    },
+                    "metrics_computed_at": "2026-03-15T09:02:00+00:00",
+                    "artifact_path": (
+                        f"/tmp/.codeman/artifacts/benchmarks/{request.run_id}/metrics.json"
+                    ),
+                }
+            ),
+        )
+
+
+def build_run_record_for_metrics(run_id: str) -> BenchmarkRunRecord:
+    return BenchmarkRunRecord(
+        run_id=run_id,
+        repository_id="repo-123",
+        snapshot_id="snapshot-123",
+        retrieval_mode="lexical",
+        dataset_id="fixture-benchmark",
+        dataset_version="2026-03-15",
+        dataset_fingerprint="f" * 64,
+        case_count=1,
+        completed_case_count=1,
+        status=BenchmarkRunStatus.SUCCEEDED,
+        artifact_path=Path(f"/tmp/.codeman/artifacts/benchmarks/{run_id}/run.json"),
+        evaluated_at_k=7,
+        recall_at_k=1.0,
+        mrr=1.0,
+        ndcg_at_k=1.0,
+        query_latency_mean_ms=5.0,
+        query_latency_p95_ms=5,
+        lexical_index_duration_ms=42,
+        semantic_index_duration_ms=None,
+        derived_index_duration_ms=None,
+        metrics_artifact_path=Path(f"/tmp/.codeman/artifacts/benchmarks/{run_id}/metrics.json"),
+        metrics_computed_at=datetime(2026, 3, 15, 9, 2, tzinfo=UTC),
+        error_code=None,
+        error_message=None,
+        started_at=datetime(2026, 3, 15, 9, 0, tzinfo=UTC),
+        completed_at=datetime(2026, 3, 15, 9, 1, tzinfo=UTC),
+    )
+
+
 def build_use_case(
     *,
     tmp_path: Path,
@@ -561,6 +641,7 @@ def build_use_case(
     semantic_runner: StubSemanticRunner | None = None,
     hybrid_runner: StubHybridRunner | None = None,
     provenance: StubRunProvenanceUseCase | None = None,
+    calculate_metrics: CalculateBenchmarkMetricsUseCase | None = None,
     semantic_indexing_config: SemanticIndexingConfig | None = None,
     embedding_providers_config: EmbeddingProvidersConfig | None = None,
     interrupt_after_create: BaseException | None = None,
@@ -590,6 +671,7 @@ def build_use_case(
         semantic_indexing_config=semantic_indexing_config or SemanticIndexingConfig(),
         embedding_providers_config=embedding_providers_config or EmbeddingProvidersConfig(),
         record_run_provenance=provenance_use_case,
+        calculate_benchmark_metrics=calculate_metrics,
     )
     return use_case, benchmark_run_store, artifact_store, provenance_use_case
 
@@ -652,6 +734,47 @@ def test_run_benchmark_executes_cases_and_persists_artifact_and_provenance(
         f"Writing benchmark artifact for run: {result.run.run_id}",
         f"Recording benchmark provenance for run: {result.run.run_id}",
     ]
+
+
+def test_run_benchmark_automatically_attaches_calculated_metrics(
+    tmp_path: Path,
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "dataset.json",
+        build_dataset_payload(query_ids=["case-1"]),
+    )
+    repository = build_repository_record(tmp_path)
+    snapshot = build_snapshot_record()
+    lexical_build = build_lexical_build(tmp_path)
+    lexical_runner = StubLexicalRunner(
+        responses=[build_lexical_result(query_text="query text for case-1")]
+    )
+    calculate_metrics = StubCalculateBenchmarkMetricsUseCase()
+    use_case, _, _, _ = build_use_case(
+        tmp_path=tmp_path,
+        repository=repository,
+        snapshot=snapshot,
+        lexical_build=lexical_build,
+        lexical_runner=lexical_runner,
+        calculate_metrics=calculate_metrics,
+    )
+    progress_lines: list[str] = []
+
+    result = use_case.execute(
+        RunBenchmarkRequest(
+            repository_id="repo-123",
+            dataset_path=dataset_path,
+            retrieval_mode="lexical",
+            max_results=7,
+        ),
+        progress=progress_lines.append,
+    )
+
+    assert calculate_metrics.requests
+    assert result.metrics is not None
+    assert result.run.recall_at_k == 1.0
+    assert result.metrics.metrics.recall_at_k == 1.0
+    assert progress_lines[-1].startswith("Calculating benchmark metrics for run:")
 
 
 def test_run_benchmark_executes_semantic_cases_against_the_preflight_build(

@@ -7,7 +7,10 @@ from pathlib import Path
 
 from codeman.application.ports.artifact_store_port import ArtifactStorePort
 from codeman.contracts.chunking import ChunkPayloadDocument
-from codeman.contracts.evaluation import BenchmarkRunArtifactDocument
+from codeman.contracts.evaluation import (
+    BenchmarkMetricsArtifactDocument,
+    BenchmarkRunArtifactDocument,
+)
 from codeman.contracts.repository import SnapshotManifestDocument
 from codeman.contracts.retrieval import SemanticEmbeddingArtifactDocument
 
@@ -94,5 +97,28 @@ class FilesystemArtifactStore(ArtifactStorePort):
         """Load a normalized JSON artifact for one benchmark execution."""
 
         return BenchmarkRunArtifactDocument.model_validate_json(
+            artifact_path.read_text(encoding="utf-8"),
+        )
+
+    def write_benchmark_metrics_artifact(
+        self,
+        artifact: BenchmarkMetricsArtifactDocument,
+        *,
+        run_id: str,
+    ) -> Path:
+        """Write a normalized JSON artifact for one benchmark metrics summary."""
+
+        destination = self.artifacts_root / "benchmarks" / run_id / "metrics.json"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(artifact.model_dump_json(indent=2), encoding="utf-8")
+        return destination
+
+    def read_benchmark_metrics_artifact(
+        self,
+        artifact_path: Path,
+    ) -> BenchmarkMetricsArtifactDocument:
+        """Load a normalized JSON artifact for one benchmark metrics summary."""
+
+        return BenchmarkMetricsArtifactDocument.model_validate_json(
             artifact_path.read_text(encoding="utf-8"),
         )

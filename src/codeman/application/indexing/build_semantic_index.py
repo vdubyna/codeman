@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from time import perf_counter_ns
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -140,6 +141,7 @@ class BuildSemanticIndexUseCase:
                 f"`codeman index build-chunks {snapshot.snapshot_id}` first.",
             )
 
+        build_started_ns = perf_counter_ns()
         source_documents = [self._load_document(chunk) for chunk in _ordered_chunks(chunks)]
         try:
             semantic_config_fingerprint = build_semantic_indexing_fingerprint(
@@ -162,6 +164,7 @@ class BuildSemanticIndexUseCase:
             semantic_config_fingerprint=semantic_config_fingerprint,
             documents=embeddings_result.documents,
         )
+        build_duration_ms = (perf_counter_ns() - build_started_ns) // 1_000_000
 
         created_at = datetime.now(UTC)
         build_record = self.semantic_index_build_store.create_build(
@@ -179,6 +182,7 @@ class BuildSemanticIndexUseCase:
                 vector_engine=vector_artifact.vector_engine,
                 document_count=vector_artifact.document_count,
                 embedding_dimension=vector_artifact.embedding_dimension,
+                build_duration_ms=build_duration_ms,
                 artifact_path=vector_artifact.artifact_path,
                 created_at=created_at,
             ),

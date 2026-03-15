@@ -43,6 +43,21 @@ class SqliteBenchmarkRunStore(BenchmarkRunStorePort):
             completed_case_count=record.completed_case_count,
             status=record.status,
             artifact_path=str(record.artifact_path) if record.artifact_path is not None else None,
+            evaluated_at_k=record.evaluated_at_k,
+            recall_at_k=record.recall_at_k,
+            mrr=record.mrr,
+            ndcg_at_k=record.ndcg_at_k,
+            query_latency_mean_ms=record.query_latency_mean_ms,
+            query_latency_p95_ms=record.query_latency_p95_ms,
+            lexical_index_duration_ms=record.lexical_index_duration_ms,
+            semantic_index_duration_ms=record.semantic_index_duration_ms,
+            derived_index_duration_ms=record.derived_index_duration_ms,
+            metrics_artifact_path=(
+                str(record.metrics_artifact_path)
+                if record.metrics_artifact_path is not None
+                else None
+            ),
+            metrics_computed_at=record.metrics_computed_at,
             error_code=record.error_code,
             error_message=record.error_message,
             started_at=record.started_at,
@@ -64,6 +79,21 @@ class SqliteBenchmarkRunStore(BenchmarkRunStorePort):
                 artifact_path=(
                     str(record.artifact_path) if record.artifact_path is not None else None
                 ),
+                evaluated_at_k=record.evaluated_at_k,
+                recall_at_k=record.recall_at_k,
+                mrr=record.mrr,
+                ndcg_at_k=record.ndcg_at_k,
+                query_latency_mean_ms=record.query_latency_mean_ms,
+                query_latency_p95_ms=record.query_latency_p95_ms,
+                lexical_index_duration_ms=record.lexical_index_duration_ms,
+                semantic_index_duration_ms=record.semantic_index_duration_ms,
+                derived_index_duration_ms=record.derived_index_duration_ms,
+                metrics_artifact_path=(
+                    str(record.metrics_artifact_path)
+                    if record.metrics_artifact_path is not None
+                    else None
+                ),
+                metrics_computed_at=record.metrics_computed_at,
                 error_code=record.error_code,
                 error_message=record.error_message,
                 completed_at=record.completed_at,
@@ -130,6 +160,21 @@ class SqliteBenchmarkRunStore(BenchmarkRunStorePort):
             completed_case_count=row["completed_case_count"],
             status=row["status"],
             artifact_path=Path(row["artifact_path"]) if row["artifact_path"] is not None else None,
+            evaluated_at_k=row["evaluated_at_k"],
+            recall_at_k=row["recall_at_k"],
+            mrr=row["mrr"],
+            ndcg_at_k=row["ndcg_at_k"],
+            query_latency_mean_ms=row["query_latency_mean_ms"],
+            query_latency_p95_ms=row["query_latency_p95_ms"],
+            lexical_index_duration_ms=row["lexical_index_duration_ms"],
+            semantic_index_duration_ms=row["semantic_index_duration_ms"],
+            derived_index_duration_ms=row["derived_index_duration_ms"],
+            metrics_artifact_path=(
+                Path(row["metrics_artifact_path"])
+                if row["metrics_artifact_path"] is not None
+                else None
+            ),
+            metrics_computed_at=row["metrics_computed_at"],
             error_code=row["error_code"],
             error_message=row["error_message"],
             started_at=row["started_at"],

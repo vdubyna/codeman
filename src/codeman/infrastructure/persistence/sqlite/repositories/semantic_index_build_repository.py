@@ -50,6 +50,7 @@ class SqliteSemanticIndexBuildStore(SemanticIndexBuildStorePort):
             vector_engine=build.vector_engine,
             document_count=build.document_count,
             embedding_dimension=build.embedding_dimension,
+            build_duration_ms=build.build_duration_ms,
             artifact_path=str(build.artifact_path),
             created_at=build.created_at,
         )
@@ -180,6 +181,7 @@ class SqliteSemanticIndexBuildStore(SemanticIndexBuildStorePort):
             vector_engine=row["vector_engine"],
             document_count=row["document_count"],
             embedding_dimension=row["embedding_dimension"],
+            build_duration_ms=row["build_duration_ms"],
             artifact_path=Path(row["artifact_path"]),
             created_at=row["created_at"],
         )

@@ -17,6 +17,7 @@ def build_record(
     status: BenchmarkRunStatus,
     completed_case_count: int,
     completed_at: datetime | None,
+    evaluated_at_k: int | None = None,
 ) -> BenchmarkRunRecord:
     return BenchmarkRunRecord(
         run_id=run_id,
@@ -30,6 +31,21 @@ def build_record(
         completed_case_count=completed_case_count,
         status=status,
         artifact_path=Path("/tmp/run.json") if completed_at is not None else None,
+        evaluated_at_k=evaluated_at_k,
+        recall_at_k=0.5 if evaluated_at_k is not None else None,
+        mrr=0.5 if evaluated_at_k is not None else None,
+        ndcg_at_k=0.75 if evaluated_at_k is not None else None,
+        query_latency_mean_ms=7.5 if evaluated_at_k is not None else None,
+        query_latency_p95_ms=9 if evaluated_at_k is not None else None,
+        lexical_index_duration_ms=42 if evaluated_at_k is not None else None,
+        semantic_index_duration_ms=None,
+        derived_index_duration_ms=None,
+        metrics_artifact_path=(
+            Path("/tmp/metrics.json") if evaluated_at_k is not None else None
+        ),
+        metrics_computed_at=(
+            datetime(2026, 3, 15, 10, 6, tzinfo=UTC) if evaluated_at_k is not None else None
+        ),
         error_code=None,
         error_message=None,
         started_at=created_at,
@@ -56,6 +72,7 @@ def test_sqlite_benchmark_run_store_round_trips_and_orders_records(tmp_path: Pat
         status=BenchmarkRunStatus.SUCCEEDED,
         completed_case_count=2,
         completed_at=datetime(2026, 3, 15, 10, 5, tzinfo=UTC),
+        evaluated_at_k=5,
     )
 
     store.initialize()
@@ -81,3 +98,5 @@ def test_sqlite_benchmark_run_store_round_trips_and_orders_records(tmp_path: Pat
     assert loaded.completed_case_count == 1
     assert loaded.error_code == "benchmark_execution_failed"
     assert [record.run_id for record in listed] == ["run-002", "run-001"]
+    assert listed[0].evaluated_at_k == 5
+    assert listed[0].metrics_artifact_path == Path("/tmp/metrics.json")

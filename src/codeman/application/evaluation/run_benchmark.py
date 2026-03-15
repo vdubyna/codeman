@@ -12,6 +12,9 @@ from types import FrameType
 from typing import Any, Callable
 from uuid import uuid4
 
+from codeman.application.evaluation.calculate_benchmark_metrics import (
+    CalculateBenchmarkMetricsUseCase,
+)
 from codeman.application.evaluation.load_benchmark_dataset import (
     LoadBenchmarkDatasetRequest,
     LoadBenchmarkDatasetUseCase,
@@ -69,10 +72,12 @@ from codeman.contracts.errors import ErrorCode
 from codeman.contracts.evaluation import (
     BenchmarkCaseExecutionArtifact,
     BenchmarkCaseRetrievalResult,
+    BenchmarkMetricsSummary,
     BenchmarkRunArtifactDocument,
     BenchmarkRunFailure,
     BenchmarkRunRecord,
     BenchmarkRunStatus,
+    CalculateBenchmarkMetricsRequest,
     RunBenchmarkRequest,
     RunBenchmarkResult,
 )
@@ -187,6 +192,7 @@ class RunBenchmarkUseCase:
     semantic_indexing_config: SemanticIndexingConfig
     embedding_providers_config: EmbeddingProvidersConfig
     record_run_provenance: RecordRunConfigurationProvenanceUseCase | None = None
+    calculate_benchmark_metrics: CalculateBenchmarkMetricsUseCase | None = None
 
     def execute(
         self,
@@ -213,6 +219,7 @@ class RunBenchmarkUseCase:
 
         run_id = uuid4().hex
         started_at = datetime.now(UTC)
+        metrics_summary: BenchmarkMetricsSummary | None = None
         running_record = BenchmarkRunRecord(
             run_id=run_id,
             repository_id=context.repository.repository_id,
@@ -226,6 +233,7 @@ class RunBenchmarkUseCase:
             status=BenchmarkRunStatus.RUNNING,
             started_at=started_at,
         )
+        succeeded_record: BenchmarkRunRecord | None = None
         executed_cases: list[BenchmarkCaseExecutionArtifact] = []
         with _trap_execution_interrupts():
             try:
@@ -283,11 +291,6 @@ class RunBenchmarkUseCase:
                     max_results=request.max_results,
                     progress=progress,
                 )
-                return self._build_result(
-                    record=succeeded_record,
-                    context=context,
-                    dataset_summary=dataset_result.summary,
-                )
             except BenchmarkRunError as error:
                 self._finalize_failed_run_if_started(
                     record=running_record,
@@ -341,6 +344,24 @@ class RunBenchmarkUseCase:
                     error=error,
                 )
                 raise error from exc
+
+        if succeeded_record is None:
+            raise BenchmarkRunError("Benchmark execution did not produce a final run record.")
+
+        if self.calculate_benchmark_metrics is not None:
+            self._report(progress, f"Calculating benchmark metrics for run: {run_id}")
+            metrics_result = self.calculate_benchmark_metrics.execute(
+                CalculateBenchmarkMetricsRequest(run_id=run_id)
+            )
+            succeeded_record = metrics_result.run
+            metrics_summary = metrics_result.metrics
+
+        return self._build_result(
+            record=succeeded_record,
+            context=context,
+            dataset_summary=dataset_result.summary,
+            metrics=metrics_summary,
+        )
 
     def _initialize_runtime(self) -> None:
         provision_runtime_paths(self.runtime_paths)
@@ -825,6 +846,7 @@ class RunBenchmarkUseCase:
         record: BenchmarkRunRecord,
         context: ResolvedBenchmarkExecutionContext,
         dataset_summary: Any,
+        metrics: BenchmarkMetricsSummary | None,
     ) -> RunBenchmarkResult:
         return RunBenchmarkResult(
             run=record,
@@ -832,6 +854,7 @@ class RunBenchmarkUseCase:
             snapshot=_snapshot_context(context.snapshot),
             build=context.build,
             dataset=dataset_summary,
+            metrics=metrics,
         )
 
     def _validate_hybrid_alignment(
@@ -893,6 +916,7 @@ def _lexical_build_context(build: LexicalIndexBuildRecord) -> LexicalRetrievalBu
         lexical_engine=build.lexical_engine,
         tokenizer_spec=build.tokenizer_spec,
         indexed_fields=list(build.indexed_fields),
+        build_duration_ms=build.build_duration_ms,
     )
 
 
@@ -904,6 +928,7 @@ def _semantic_build_context(build: SemanticIndexBuildRecord) -> SemanticRetrieva
         model_version=build.model_version,
         vector_engine=build.vector_engine,
         semantic_config_fingerprint=build.semantic_config_fingerprint,
+        build_duration_ms=build.build_duration_ms,
     )
 
 

@@ -168,6 +168,7 @@ class LexicalIndexBuildRecord(BaseModel):
     tokenizer_spec: str
     indexed_fields: list[str] = Field(default_factory=list)
     chunks_indexed: int = 0
+    build_duration_ms: int | None = Field(default=None, ge=0)
     index_path: Path
     created_at: datetime
 
@@ -190,6 +191,7 @@ class SemanticIndexBuildRecord(BaseModel):
     vector_engine: str
     document_count: int = 0
     embedding_dimension: int = 0
+    build_duration_ms: int | None = Field(default=None, ge=0)
     artifact_path: Path
     created_at: datetime
 
@@ -329,6 +331,7 @@ class LexicalRetrievalBuildContext(RetrievalBuildContext):
     lexical_engine: str
     tokenizer_spec: str
     indexed_fields: list[str] = Field(default_factory=list)
+    build_duration_ms: int | None = Field(default=None, ge=0)
 
 
 class SemanticRetrievalBuildContext(RetrievalBuildContext):
@@ -339,6 +342,7 @@ class SemanticRetrievalBuildContext(RetrievalBuildContext):
     model_version: str
     vector_engine: str
     semantic_config_fingerprint: str
+    build_duration_ms: int | None = Field(default=None, ge=0)
 
 
 class HybridRetrievalBuildContext(RetrievalBuildContext):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from time import perf_counter_ns
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -179,9 +180,9 @@ class BuildLexicalIndexUseCase:
                 )
             )
 
-        documents = [self._load_document(chunk) for chunk in _ordered_chunks(chunks)]
-
+        build_started_ns = perf_counter_ns()
         try:
+            documents = [self._load_document(chunk) for chunk in _ordered_chunks(chunks)]
             artifact = self.lexical_index.build(
                 repository_id=repository.repository_id,
                 snapshot_id=snapshot.snapshot_id,
@@ -193,6 +194,7 @@ class BuildLexicalIndexUseCase:
             raise BuildLexicalIndexError(
                 f"Lexical index build failed for snapshot: {snapshot.snapshot_id}",
             ) from exc
+        build_duration_ms = (perf_counter_ns() - build_started_ns) // 1_000_000
 
         created_at = datetime.now(UTC)
         indexing_config_fingerprint = (
@@ -210,6 +212,7 @@ class BuildLexicalIndexUseCase:
                 tokenizer_spec=artifact.tokenizer_spec,
                 indexed_fields=list(artifact.indexed_fields),
                 chunks_indexed=artifact.chunks_indexed,
+                build_duration_ms=build_duration_ms,
                 index_path=artifact.index_path,
                 created_at=created_at,
             ),
